@@ -31,7 +31,11 @@ book:
         - chapters/image-formation.qmd
     - part: "Features"
       chapters:
-        - chapters/edges.qmd
+        - chapters/features.qmd
+    - part: "Geometry"
+      chapters:
+        - chapters/transformations.qmd
+        - chapters/camera-models.qmd
 
 format:
   live-html:

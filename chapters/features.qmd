@@ -1,0 +1,425 @@
+---
+# Editable code runs in the reader's browser (Pyodide), not at build time.
+engine: markdown
+pyodide:
+  packages:
+    - opencv-python
+    - matplotlib
+---
+
+# Features {#sec-features}
+
+```{=html}
+<link rel="stylesheet" href="../assets/features.css">
+```
+
+Show a person two photographs of the same street taken from different corners, and they will point out the same window, the same lamppost and the same doorway in both within seconds. For a robot, that ability is the foundation of almost everything that follows in this book. Stitching panoramas, estimating how a camera moved, building 3D maps and tracking objects all start by finding the *same physical point* in more than one image.
+
+The points that make this possible are called **features**: small, distinctive parts of an image that can be found again reliably. This chapter builds up the classic toolkit for finding and describing them, starting from the most basic operation in image processing.
+
+::: {.callout-note appearance="simple"}
+**In this chapter.** Filtering and convolution · image gradients and edges · the Canny detector · corners and the Harris detector · scale and blobs · descriptors and matching. Most sections have a figure you can play with.
+:::
+
+## What makes a good feature?
+
+In machine learning, a feature is any measurable property used to make a prediction. In computer vision the word has a more specific, geometric meaning. A useful image feature is:
+
+- **Repeatable.** It is found again when the viewpoint, lighting or scale changes.
+- **Distinctive.** Its surroundings look different from those of other features, so it can be told apart.
+- **Local.** It depends on a small neighbourhood, so it survives occlusion and clutter.
+- **Efficient.** It can be computed quickly, often in real time on a small robot.
+
+Features come at several levels. **Low-level** features such as edges, corners and blobs describe local brightness patterns. **Mid-level** features combine them into parts and textures. **High-level** features describe objects and scenes, and today they are usually learned by deep networks. This chapter focuses on the low-level features that classical geometry, and much of modern robotics, is built on.
+
+## Images as functions and filtering
+
+It helps to think of a grayscale image as a function $I(x, y)$ that gives the brightness at each pixel. Many useful operations replace each pixel with a weighted combination of its neighbours. When the same weights are used everywhere, the operation is a **convolution** with a small array of weights called a **kernel** or **filter**:
+
+$$
+(I * K)(x, y) = \sum_{i=-1}^{1} \sum_{j=-1}^{1} K(i, j)\, I(x - i,\, y - j).
+$$
+
+(Strictly, the formula without the minus signs is *correlation*. For the symmetric kernels used most often the two are identical, and libraries such as OpenCV actually compute correlation.)
+
+### Convolution, one step at a time
+
+The kernel slides across the image. At each position it multiplies the pixels under it by its weights and adds up the results. Step through it below. The input is a dark region meeting a bright one, with a single bright speck.
+
+```{=html}
+<div class="sim" id="conv-step">
+  <div class="steps">
+    <figure><div class="grid grid--input"></div><figcaption>Input image</figcaption></figure>
+    <figure><div class="grid grid--kernel"></div><figcaption>Kernel</figcaption></figure>
+    <figure><div class="grid grid--output"></div><figcaption>Output</figcaption></figure>
+  </div>
+  <div class="sim__controls">
+    <span class="sim__group">Kernel
+      <button type="button" class="btn btn-gold-outline btn-sm" data-steps-kernel="box">Box blur</button>
+      <button type="button" class="btn btn-gold-outline btn-sm is-on" data-steps-kernel="sobelx">Sobel x</button>
+      <button type="button" class="btn btn-gold-outline btn-sm" data-steps-kernel="sharpen">Sharpen</button>
+    </span>
+    <span class="sim__group">
+      <button type="button" class="btn btn-gold-outline btn-sm" data-step="prev">Back</button>
+      <button type="button" class="btn btn-primary btn-sm" data-step="next">Next</button>
+      <button type="button" class="btn btn-gold-outline btn-sm" data-step="play">Play</button>
+    </span>
+  </div>
+  <p class="sim__readout"></p>
+</div>
+```
+
+Notice what each kernel does to the speck and the boundary. The box blur spreads the speck out. Sobel x ignores the flat regions entirely and produces large values only where brightness changes from left to right. Sharpen exaggerates both.
+
+### A filter playground
+
+Now apply a kernel to a whole image. Choose a preset or type your own nine weights.
+
+```{=html}
+<div class="sim" id="conv-sim">
+  <div class="sim__pair">
+    <figure><canvas class="sim__canvas"></canvas><figcaption>Input</figcaption></figure>
+    <figure><canvas class="sim__canvas"></canvas><figcaption>Filtered</figcaption></figure>
+  </div>
+  <div class="kernel-row">
+    <div class="kernel" aria-label="3 by 3 kernel weights">
+      <input type="number" step="0.1" aria-label="weight 1"><input type="number" step="0.1" aria-label="weight 2"><input type="number" step="0.1" aria-label="weight 3">
+      <input type="number" step="0.1" aria-label="weight 4"><input type="number" step="0.1" aria-label="weight 5"><input type="number" step="0.1" aria-label="weight 6">
+      <input type="number" step="0.1" aria-label="weight 7"><input type="number" step="0.1" aria-label="weight 8"><input type="number" step="0.1" aria-label="weight 9">
+    </div>
+    <div class="kernel-presets">
+      <button type="button" class="btn btn-gold-outline btn-sm" data-kernel="identity">Identity</button>
+      <button type="button" class="btn btn-gold-outline btn-sm" data-kernel="box">Box blur</button>
+      <button type="button" class="btn btn-gold-outline btn-sm" data-kernel="gauss">Gaussian</button>
+      <button type="button" class="btn btn-gold-outline btn-sm" data-kernel="sharpen">Sharpen</button>
+      <button type="button" class="btn btn-gold-outline btn-sm" data-kernel="sobelx">Sobel x</button>
+      <button type="button" class="btn btn-gold-outline btn-sm" data-kernel="sobely">Sobel y</button>
+      <button type="button" class="btn btn-gold-outline btn-sm" data-kernel="laplacian">Laplacian</button>
+    </div>
+  </div>
+  <p class="sim__readout"></p>
+</div>
+```
+
+Two families of kernels stand out. **Smoothing** kernels, such as the box and Gaussian, have positive weights that sum to one; they average away noise and fine detail. **Derivative** kernels, such as Sobel and the Laplacian, have weights that sum to zero; they ignore constant brightness and respond only to change. The Gaussian is the preferred smoother because it weights near neighbours more than far ones and introduces no blocky artifacts. Its width is set by its standard deviation $\sigma$:
+
+$$
+G_\sigma(x, y) = \frac{1}{2\pi\sigma^2}\, e^{-(x^2 + y^2)/(2\sigma^2)}.
+$$
+
+::: {.callout-tip}
+## Exercise
+In the playground, type a kernel whose weights sum to 2. What happens to the image, and why? Then find a kernel that detects only diagonal edges.
+:::
+
+## Image gradients
+
+Edges are where brightness changes quickly, so the natural tool is the derivative. For an image, the **gradient** collects the derivatives in both directions:
+
+$$
+\nabla I = \left( \frac{\partial I}{\partial x}, \frac{\partial I}{\partial y} \right) = (I_x, I_y),
+\qquad
+\lVert \nabla I \rVert = \sqrt{I_x^2 + I_y^2},
+\qquad
+\theta = \operatorname{atan2}(I_y, I_x).
+$$
+
+The gradient points in the direction of fastest increase in brightness, which is *across* an edge, and its magnitude says how strong the edge is. Images are discrete, so the derivatives are estimated with small kernels. The earliest, the Roberts cross (1963), used 2 × 2 kernels. The **Sobel** operator (1968) combines a derivative in one direction with smoothing in the other:
+
+$$
+K_x = \begin{bmatrix} -1 & 0 & 1 \\ -2 & 0 & 2 \\ -1 & 0 & 1 \end{bmatrix},
+\qquad
+K_y = \begin{bmatrix} -1 & -2 & -1 \\ 0 & 0 & 0 \\ 1 & 2 & 1 \end{bmatrix}.
+$$
+
+Click or drag anywhere on the image to see the gradient at that pixel. Switch views to see the magnitude, or the direction encoded as colour.
+
+```{=html}
+<div class="sim" id="grad-sim">
+  <canvas class="sim__canvas"></canvas>
+  <div class="sim__controls">
+    <span class="sim__group">Show
+      <button type="button" class="btn btn-gold-outline btn-sm is-on" data-view="image">Image</button>
+      <button type="button" class="btn btn-gold-outline btn-sm" data-view="mag">Magnitude</button>
+      <button type="button" class="btn btn-gold-outline btn-sm" data-view="dir">Direction as colour</button>
+    </span>
+  </div>
+  <p class="sim__readout"></p>
+</div>
+```
+
+On the brick wall, the colour view shows two dominant directions: the horizontal mortar lines and the short vertical joints. On the floor, the wood grain produces weaker, mostly vertical gradients.
+
+## Edges and the Canny detector
+
+Thresholding the gradient magnitude gives thick, broken and noisy edges. In 1986 John Canny designed a detector to do better, by asking what an optimal edge detector should achieve: find all real edges, place them accurately, and mark each edge only once. His algorithm has four steps:
+
+1. **Smooth** the image with a Gaussian filter to suppress noise.
+2. **Compute** the gradient magnitude and direction.
+3. **Thin** the edges with *non-maximum suppression*: keep a pixel only if its magnitude is the largest along the gradient direction.
+4. **Link** edges with two thresholds (*hysteresis*): strong edges above the high threshold are kept, and weak edges between the thresholds are kept only if they connect to a strong edge.
+
+Turn on your camera and move the sliders. A higher blur removes texture and noise. Raising the thresholds keeps only the strongest edges.
+
+{{< include ../demos/_canny.qmd >}}
+
+::: {.callout-tip}
+## Things to try
+- Set both thresholds low. Where do false edges appear?
+- Set blur to 0, then to 7. How does the edge map change on textured surfaces?
+- Hold up a sheet of paper with a single straight edge. Why does Canny give a line one pixel wide rather than a thick band?
+:::
+
+An older alternative, the Marr–Hildreth detector (1979), looks for *zero crossings* of the second derivative, computed with a Laplacian of Gaussian. That same filter returns later in this chapter as a blob detector.
+
+## Corners
+
+Edges are useful, but they are poor features for matching. Slide a small window along a straight edge and the view inside barely changes, so you cannot tell where along the edge you are. This is called the **aperture problem**. A **corner**, where two edges meet, is different: moving the window in *any* direction changes what it sees. That is exactly the property a repeatable, well-localized feature needs.
+
+### The Harris detector
+
+Hans Moravec (1980) measured this directly by shifting a window a few pixels in several directions and comparing. Chris Harris and Mike Stephens (1988) made the idea smooth and efficient. For a small shift $(u, v)$, the change in a window $W$ is
+
+$$
+E(u, v) = \sum_{(x, y) \in W} w(x, y)\,\big[I(x + u, y + v) - I(x, y)\big]^2
+\;\approx\;
+\begin{bmatrix} u & v \end{bmatrix} M \begin{bmatrix} u \\ v \end{bmatrix},
+$$
+
+using a first-order Taylor expansion, where $w$ is a Gaussian weighting and $M$ is the **structure tensor**:
+
+$$
+M = \sum_{(x, y) \in W} w(x, y) \begin{bmatrix} I_x^2 & I_x I_y \\ I_x I_y & I_y^2 \end{bmatrix}.
+$$
+
+The eigenvalues $\lambda_1 \ge \lambda_2$ of $M$ say how much the window changes along its strongest and weakest directions:
+
+- **Flat:** both eigenvalues are small. Nothing changes.
+- **Edge:** one is large, one is small. Change in one direction only.
+- **Corner:** both are large. Change in every direction.
+
+Drag the window around the scene below. The ellipse shows how strongly the patch changes in each direction, and the plot on the right places the patch in eigenvalue space.
+
+```{=html}
+<div class="sim" id="harris-patch">
+  <div class="harris-layout">
+    <figure><canvas></canvas><figcaption>Drag the window</figcaption></figure>
+    <figure><canvas></canvas><figcaption>Eigenvalues of M</figcaption></figure>
+  </div>
+  <p class="legend"><span class="is-flat">Flat</span><span class="is-edge">Edge</span><span class="is-corner">Corner</span></p>
+  <p class="sim__readout"></p>
+</div>
+```
+
+Computing eigenvalues at every pixel is avoidable. Harris scores each pixel with
+
+$$
+R = \det(M) - k\,\operatorname{trace}(M)^2 = \lambda_1 \lambda_2 - k\,(\lambda_1 + \lambda_2)^2,
+$$
+
+with $k$ typically between 0.04 and 0.06. $R$ is large and positive for corners, negative for edges and small for flat regions. Corners are the local maxima of $R$ above a threshold. A popular variant by Shi and Tomasi (1994) simply uses $\min(\lambda_1, \lambda_2)$, which tends to pick features that track more reliably.
+
+```{=html}
+<div class="sim" id="harris-sim">
+  <canvas class="sim__canvas"></canvas>
+  <div class="sim__controls">
+    <label>k <input type="range" name="k" min="0.02" max="0.15" step="0.01" value="0.05"><output></output></label>
+    <label>Threshold <input type="range" name="thresh" min="0.2" max="10" step="0.1" value="1"><output></output></label>
+    <button type="button" class="btn btn-gold-outline btn-sm" data-action="response">Show response R</button>
+  </div>
+  <p class="sim__readout"></p>
+</div>
+```
+
+Harris corners are invariant to rotation, since the eigenvalues of $M$ do not depend on orientation, and fairly robust to lighting changes. They are *not* invariant to scale: a corner that is sharp in a close-up becomes a gentle curve when the camera zooms out. That is the next problem to solve.
+
+### Try it in code
+
+```{pyodide}
+import cv2
+import numpy as np
+import matplotlib.pyplot as plt
+
+# A simple scene: two rectangles and a rotated square
+img = np.full((200, 300), 220, np.uint8)
+cv2.rectangle(img, (30, 40), (120, 150), 40, -1)
+cv2.rectangle(img, (150, 110), (270, 180), 90, -1)
+square = cv2.boxPoints(((215, 60), (60, 60), 30)).astype(np.int32)
+cv2.fillPoly(img, [square], 60)
+
+# Harris response: block size 3, Sobel aperture 3, k = 0.05
+R = cv2.cornerHarris(np.float32(img), 3, 3, 0.05)
+corners = np.argwhere(R > 0.01 * R.max())
+
+fig, axes = plt.subplots(1, 2, figsize=(11, 3.6))
+axes[0].imshow(R, cmap="magma"); axes[0].set_title("Harris response R")
+axes[1].imshow(img, cmap="gray"); axes[1].set_title(f"{len(corners)} corner pixels")
+axes[1].scatter(corners[:, 1], corners[:, 0], s=4, c="red")
+for ax in axes: ax.axis("off")
+plt.show()
+```
+
+::: {.callout-tip}
+## Exercise
+Change the threshold `0.01` to `0.1`. Which corners survive? Replace `cv2.cornerHarris` with `cv2.goodFeaturesToTrack(img, 20, 0.01, 10)` (Shi–Tomasi) and compare.
+:::
+
+## Scale and blobs
+
+How large is a feature? A pattern only looks like a corner or a blob at the right zoom level. The solution is to examine the image at many scales at once. Blurring with Gaussians of increasing $\sigma$ creates a **scale space**: fine details vanish first, coarse structures last.
+
+To find features *and* their scale, we need a detector that responds most strongly when the scale matches the structure. The **Laplacian of Gaussian** (LoG), normalized by $\sigma^2$, does exactly this for round blobs:
+
+$$
+\nabla^2_{\text{norm}} L = \sigma^2 \left( \frac{\partial^2 L}{\partial x^2} + \frac{\partial^2 L}{\partial y^2} \right),
+\qquad L = G_\sigma * I.
+$$
+
+For a disc of radius $r$, the response peaks at $\sigma \approx r / \sqrt{2}$. In practice the LoG is approximated by the **difference of Gaussians** (DoG), $G_{k\sigma} * I - G_\sigma * I$, which is cheaper and falls out of building the scale space anyway.
+
+Move the slider to change $\sigma$. Small blobs light up at small scales and large blobs at large ones. Then press **Detect blobs** to search across all scales at once; each blob is circled at the scale where it responded most strongly.
+
+```{=html}
+<div class="sim" id="scale-sim">
+  <div class="sim__pair">
+    <figure><canvas class="sim__canvas"></canvas><figcaption>Gaussian blur at σ</figcaption></figure>
+    <figure><canvas class="sim__canvas"></canvas><figcaption>Normalized LoG response</figcaption></figure>
+  </div>
+  <div class="sim__controls">
+    <label>Scale <input type="range" name="s" min="0" max="6" step="1" value="2"><output></output></label>
+    <button type="button" class="btn btn-primary btn-sm" data-action="detect">Detect blobs</button>
+  </div>
+  <p class="sim__readout"></p>
+</div>
+```
+
+Blob detectors are used well beyond feature matching: counting cells under a microscope, finding stars and galaxies, and inspecting parts on a production line.
+
+## Describing features
+
+A detector says *where* a feature is. To match it across images we also need to describe *what it looks like*, in a way that survives changes in viewpoint and lighting. That description is a **descriptor**, usually a vector of numbers.
+
+### SIFT
+
+David Lowe's **Scale-Invariant Feature Transform** (SIFT, 1999 and 2004) combined the ideas above into one of the most influential algorithms in computer vision:
+
+1. **Detect** extrema of the difference of Gaussians across space and scale.
+2. **Refine** each keypoint's position and discard weak or edge-like ones.
+3. **Assign an orientation** from the dominant gradient direction around the keypoint.
+4. **Describe** the neighbourhood, rotated to that orientation and scaled to the keypoint's size, as a 4 × 4 grid of gradient-orientation histograms with 8 bins each: a 128-dimensional vector.
+
+Because the descriptor is measured relative to the keypoint's own scale and orientation, the same physical point produces a similar vector even when the image is zoomed or rotated.
+
+### Faster alternatives: SURF, FAST and ORB
+
+SIFT is accurate but expensive for a small robot. **SURF** (2006) approximates its filters with box filters. **FAST** (2006) finds corners by checking a ring of 16 pixels around each candidate, which is extremely quick. **ORB** (2011) pairs FAST corners with **BRIEF** descriptors: strings of bits, each recording whether one pixel in the patch is brighter than another. ORB adds an orientation so the bits are compared in a rotated frame. Binary descriptors are compared with the **Hamming distance**, the number of differing bits, which modern processors compute in a single instruction.
+
+Turn on your camera to see ORB keypoints live. Each circle is a keypoint, and its line shows the orientation ORB assigned.
+
+```{=html}
+<div class="sim" id="orb-live">
+  <video playsinline muted hidden></video>
+  <canvas class="sim__canvas"></canvas>
+  <div class="sim__controls">
+    <button type="button" class="btn btn-primary btn-sm">Start camera</button>
+  </div>
+  <p class="sim__readout">Video is processed in your browser and never uploaded.</p>
+</div>
+```
+
+## Matching features
+
+With descriptors for two images, matching starts simply: for each feature in the first image, find the feature in the second whose descriptor is closest. The difficulty is that many features have *some* nearest neighbour, even when their true match is not visible at all. Repeated patterns make it worse: one brick corner looks much like the next.
+
+Lowe's **ratio test** handles this neatly. Compare the distance to the best match $d_1$ with the distance to the second-best match $d_2$, and accept only if
+
+$$
+\frac{d_1}{d_2} < \tau, \qquad \tau \approx 0.7 \text{ to } 0.8.
+$$
+
+A distinctive feature has one clearly best match. An ambiguous one, like a brick corner, has several almost equally good candidates and is rejected.
+
+The two views below show the same scene rendered from different positions. Press **Find matches** to run ORB in your browser, then move the ratio slider. Watch how the brick wall produces many wrong matches when the test is loose.
+
+```{=html}
+<div class="sim" id="orb-match">
+  <canvas class="sim__canvas"></canvas>
+  <div class="sim__controls">
+    <button type="button" class="btn btn-primary btn-sm" data-action="run">Find matches</button>
+    <label>Ratio test τ <input type="range" name="ratio" min="0.5" max="1" step="0.01" value="0.75"><output></output></label>
+    <label>Features per image <input type="range" name="nf" min="100" max="1500" step="100" value="600"><output></output></label>
+  </div>
+  <p class="sim__readout">Runs OpenCV.js in your browser (about 10 MB, downloaded once).</p>
+</div>
+```
+
+Even after the ratio test, some matches are wrong. The next chapter shows how geometry, through a robust method called RANSAC, separates the true matches from the rest.
+
+### Try it in code
+
+The cell below creates a second view by rotating and scaling a synthetic image, then matches ORB features between the two.
+
+```{pyodide}
+import cv2
+import numpy as np
+import matplotlib.pyplot as plt
+
+rng = np.random.default_rng(3)
+img1 = np.full((240, 320), 200, np.uint8)
+for _ in range(25):                                    # random shapes give texture
+    x, y = rng.integers(10, 300), rng.integers(10, 220)
+    w, h = rng.integers(10, 50, size=2)
+    cv2.rectangle(img1, (int(x), int(y)), (int(x + w), int(y + h)), int(rng.integers(0, 160)), -1)
+cv2.putText(img1, "ROBOT", (60, 140), cv2.FONT_HERSHEY_SIMPLEX, 2, 30, 4)
+
+# Second view: rotate by 20 degrees and scale by 0.8 about the centre
+A = cv2.getRotationMatrix2D((160, 120), 20, 0.8)
+img2 = cv2.warpAffine(img1, A, (320, 240), borderValue=200)
+
+orb = cv2.ORB_create(500)
+k1, d1 = orb.detectAndCompute(img1, None)
+k2, d2 = orb.detectAndCompute(img2, None)
+
+matcher = cv2.BFMatcher(cv2.NORM_HAMMING)
+pairs = matcher.knnMatch(d1, d2, k=2)
+good = [p[0] for p in pairs if len(p) == 2 and p[0].distance < 0.75 * p[1].distance]
+
+vis = cv2.drawMatches(img1, k1, img2, k2, good, None, flags=2)
+plt.figure(figsize=(12, 4.5))
+plt.imshow(vis)
+plt.title(f"{len(good)} matches pass the ratio test (of {len(pairs)})")
+plt.axis("off")
+plt.show()
+```
+
+::: {.callout-tip}
+## Exercise
+Change the ratio from `0.75` to `0.95` and then to `0.5`. How do the number of matches and the number of obviously wrong lines change? Increase the rotation to 90 degrees. Does ORB still match?
+:::
+
+## Beyond hand-crafted features
+
+Classic features remain the workhorses of robot perception because they are fast, well understood and need no training. Two developments are worth knowing:
+
+- **Feature tracking.** For video, it is often cheaper to *track* features from frame to frame than to detect and match them anew. The Kanade–Lucas–Tomasi (KLT) tracker follows Shi–Tomasi corners using image gradients, an idea we return to in the chapter on optical flow.
+- **Learned features.** Deep networks now learn detectors, descriptors and even the matching itself. SuperGlue (2020) matches features with a graph neural network, and LoFTR (2021) matches images densely with transformers, working even on textureless surfaces where classic detectors find nothing.
+
+## Summary
+
+- Convolution slides a small kernel across an image. Smoothing kernels sum to one; derivative kernels sum to zero.
+- The gradient points across edges. Sobel kernels estimate it, and Canny turns it into thin, connected edges.
+- Corners change in every direction. The Harris detector measures this with the eigenvalues of the structure tensor.
+- Scale space, built from Gaussians, lets detectors such as LoG and DoG find blobs and their size.
+- Descriptors such as SIFT and ORB summarize a feature's neighbourhood so it can be matched; the ratio test rejects ambiguous matches.
+
+::: {.callout-tip}
+## Chapter exercises
+1. Show that convolving with a box filter twice is the same as convolving once with a larger, triangle-shaped filter. What happens if you keep repeating it?
+2. For an ideal vertical step edge, write down $M$ for a window centred on the edge. What are its eigenvalues?
+3. Why is the ratio test more useful on a brick wall than on a cluttered desk?
+4. A drone sees a long, featureless corridor. Which of this chapter's features would it find, and which would fail?
+:::
+
+```{=html}
+<script src="../demos/features.js"></script>
+```

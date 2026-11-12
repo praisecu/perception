@@ -1,0 +1,149 @@
+/* Chapter 5: Camera Models and Calibration */
+
+.cm-grid {
+  display: grid;
+  grid-template-columns: 1fr 1fr;
+  gap: 0.8rem;
+}
+
+.cm-grid figure {
+  margin: 0;
+}
+
+.cm-grid canvas,
+.cm-canvas {
+  display: block;
+  width: 100%;
+  border-radius: 12px;
+  background: rgba(207, 185, 125, 0.06);
+  touch-action: none;
+}
+
+.cm-grid figcaption {
+  margin-top: 0.3rem;
+  font-size: 0.85rem;
+  opacity: 0.7;
+  text-align: center;
+}
+
+.cm-mats {
+  display: flex;
+  flex-wrap: wrap;
+  align-items: center;
+  gap: 0.5rem 1.4rem;
+  margin-top: 0.8rem;
+  font-size: 0.85rem;
+}
+
+.cm-mat {
+  display: flex;
+  align-items: center;
+  gap: 0.4rem;
+}
+
+.cm-mat__name {
+  font-family: "Nunito Sans", sans-serif;
+  font-weight: 800;
+}
+
+.cm-mat table {
+  border-left: 2px solid currentColor;
+  border-right: 2px solid currentColor;
+  border-radius: 4px;
+  border-collapse: separate;
+  font-family: ui-monospace, SFMono-Regular, Consolas, monospace;
+  font-variant-numeric: tabular-nums;
+}
+
+.cm-mat td {
+  padding: 0.05rem 0.45rem;
+  text-align: right;
+  border: 0;
+}
+
+.cm-aa {
+  display: grid;
+  gap: 0.2rem;
+}
+
+.cm-steps {
+  display: grid;
+  gap: 0.45rem;
+  margin: 0;
+  padding: 0;
+  list-style: none;
+  counter-reset: cmstep;
+}
+
+.cm-step {
+  padding: 0.55rem 0.8rem;
+  border: 1px solid rgba(207, 185, 125, 0.3);
+  border-radius: 10px;
+  transition: opacity 200ms ease, border-color 200ms ease, background 200ms ease;
+}
+
+.cm-step.is-hidden {
+  opacity: 0.25;
+}
+
+.cm-step.is-current {
+  border-color: #cfb97d;
+  background: rgba(207, 185, 125, 0.14);
+}
+
+.cm-step__label {
+  display: block;
+  font-family: "Nunito Sans", sans-serif;
+  font-size: 0.78rem;
+  font-weight: 800;
+  letter-spacing: 0.1em;
+  text-transform: uppercase;
+  color: #b39a52;
+}
+
+.cm-step__value {
+  display: block;
+  font-family: ui-monospace, SFMono-Regular, Consolas, monospace;
+  font-size: 0.88rem;
+}
+
+.cm-warn {
+  padding: 0.5rem 0.75rem;
+  border-radius: 10px;
+  background: rgba(217, 83, 79, 0.12);
+}
+
+.cm-frames {
+  display: grid;
+  grid-template-columns: 1.15fr 1fr;
+  gap: 1rem;
+  align-items: start;
+}
+
+@media (max-width: 700px) {
+  .cm-grid,
+  .cm-frames {
+    grid-template-columns: 1fr;
+  }
+}
+
+/* Keep slider, label and value on one line on phones in this chapter */
+@media (max-width: 600px) {
+  #cam3d-sim .sim__controls label,
+  #frames-sim .sim__controls label,
+  #rotation-sim .sim__controls label,
+  #intrinsics-sim .sim__controls label,
+  #distortion-sim .sim__controls label {
+    flex-wrap: nowrap;
+    width: 100%;
+  }
+
+  #cam3d-sim input[type="range"],
+  #frames-sim input[type="range"],
+  #rotation-sim input[type="range"],
+  #intrinsics-sim input[type="range"],
+  #distortion-sim input[type="range"] {
+    flex: 1;
+    min-width: 0;
+  }
+}

@@ -1,0 +1,420 @@
+---
+# Editable code runs in the reader's browser (Pyodide), not at build time.
+engine: markdown
+pyodide:
+  packages:
+    - opencv-python
+    - matplotlib
+    - numpy
+---
+
+# Camera Models and Calibration {#sec-camera-models}
+
+```{=html}
+<link rel="stylesheet" href="../assets/camera-models.css">
+```
+
+In @sec-image-formation we met the pinhole camera, where a point at depth $Z$ lands at $x = fX/Z$. That model assumed the camera sat at the origin, looked straight down its own axis, and measured positions in millimeters on the sensor. A robot needs more. Its camera is mounted somewhere on the robot, points in some direction, reports positions in pixels, and looks through a lens that bends straight lines.
+
+This chapter builds the complete camera model that perception systems use every day, and shows how to measure its parameters for a real camera. By the end you will be able to take any 3D point in the world and say exactly which pixel it lands on.
+
+::: {.callout-note appearance="simple"}
+**In this chapter.** Coordinate frames · 3D rotations, Euler angles and gimbal lock · extrinsics $[R \mid t]$ · intrinsics $K$ · the projection matrix $P = K[R \mid t]$ · lens distortion · calibration with a checkerboard · practical tips for robots.
+:::
+
+## Four coordinate frames
+
+Every camera model is a chain of coordinate changes. Four frames appear again and again:
+
+- **World frame.** A fixed frame attached to the environment, such as the corner of a room or the robot's starting position. In robotics it usually has $x$ forward, $y$ left and $z$ up.
+- **Camera frame.** Attached to the camera, with its origin at the center of projection. By the convention used in OpenCV and most vision software, $x$ points right, $y$ points down and $z$ points forward along the optical axis.
+- **Image plane (normalized coordinates).** The plane $z = 1$ in front of the camera. A camera-frame point $(X_c, Y_c, Z_c)$ lands at $(x, y) = (X_c / Z_c,\; Y_c / Z_c)$, the pinhole projection with $f = 1$.
+- **Pixel frame.** Integer pixel positions $(u, v)$, with the origin at the top-left corner of the image, $u$ to the right and $v$ down.
+
+The full camera model is the journey through these four frames:
+
+$$
+\underbrace{\mathbf{X}_w}_{\text{world}}
+\;\xrightarrow{\;R,\,t\;}\;
+\underbrace{\mathbf{X}_c}_{\text{camera}}
+\;\xrightarrow{\;\div Z_c\;}\;
+\underbrace{(x, y)}_{\text{image plane}}
+\;\xrightarrow{\;K\;}\;
+\underbrace{(u, v)}_{\text{pixels}}.
+$$
+
+Step through it below with a real camera, one transformation at a time. Move the point with the sliders and watch every number update.
+
+```{=html}
+<div class="sim" id="frames-sim">
+  <div class="cm-frames">
+    <ol class="cm-steps">
+      <li class="cm-step"><span class="cm-step__label">1 · World frame</span><span class="cm-step__value"></span></li>
+      <li class="cm-step"><span class="cm-step__label">2 · Camera frame (extrinsics)</span><span class="cm-step__value"></span></li>
+      <li class="cm-step"><span class="cm-step__label">3 · Image plane (divide by depth)</span><span class="cm-step__value"></span></li>
+      <li class="cm-step"><span class="cm-step__label">4 · Pixels (intrinsics)</span><span class="cm-step__value"></span></li>
+    </ol>
+    <figure class="cm-grid" style="grid-template-columns: 1fr; margin: 0;">
+      <canvas aria-label="The 640 by 480 image, with the projected pixel marked"></canvas>
+      <figcaption>The 640 × 480 image</figcaption>
+    </figure>
+  </div>
+  <div class="sim__controls">
+    <label>X<sub>w</sub> <input type="range" name="X" min="1" max="10" step="0.1" value="5"><output></output></label>
+    <label>Y<sub>w</sub> <input type="range" name="Y" min="-3" max="3" step="0.1" value="1"><output></output></label>
+    <label>Z<sub>w</sub> <input type="range" name="Z" min="-1" max="3" step="0.1" value="0.5"><output></output></label>
+    <button type="button" class="btn btn-gold-outline btn-sm" data-action="back">Back</button>
+    <button type="button" class="btn btn-primary btn-sm" data-action="next">Next step</button>
+    <button type="button" class="btn btn-gold-outline btn-sm" data-action="all">Show all</button>
+  </div>
+</div>
+```
+
+The camera here sits 1.2 m above the world origin, turned 10° to the left and tilted 5° down, with $f_x = f_y = 600$ pixels and the principal point at the image center. The next sections explain each step.
+
+## Rotations in 3D
+
+A rigid motion in 3D is a rotation followed by a translation. Rotations are the harder half.
+
+### Rotation matrices
+
+A rotation is a $3 \times 3$ matrix $R$ whose columns are orthonormal and whose determinant is $+1$:
+
+$$
+R^\top R = I, \qquad \det R = 1.
+$$
+
+The columns of $R$ are the axes of the rotated frame written in the original frame. Because $R^{-1} = R^\top$, undoing a rotation costs nothing. Rotations about single axes are the building blocks:
+
+$$
+R_x(\phi) = \begin{bmatrix} 1 & 0 & 0 \\ 0 & \cos\phi & -\sin\phi \\ 0 & \sin\phi & \cos\phi \end{bmatrix},\quad
+R_y(\theta) = \begin{bmatrix} \cos\theta & 0 & \sin\theta \\ 0 & 1 & 0 \\ -\sin\theta & 0 & \cos\theta \end{bmatrix},\quad
+R_z(\psi) = \begin{bmatrix} \cos\psi & -\sin\psi & 0 \\ \sin\psi & \cos\psi & 0 \\ 0 & 0 & 1 \end{bmatrix}.
+$$
+
+A rotation matrix has nine numbers but only three degrees of freedom. Several smaller parameterizations exist, each with strengths and pitfalls.
+
+### Euler angles and gimbal lock
+
+The most intuitive description chains three single-axis rotations. Aircraft and drones use **yaw** $\psi$ about $z$, **pitch** $\theta$ about $y$ and **roll** $\phi$ about $x$:
+
+$$
+R = R_z(\psi)\, R_y(\theta)\, R_x(\phi).
+$$
+
+Euler angles are easy to read but have a famous flaw. When the pitch reaches $\pm 90°$, the first and last rotations act about the same axis, and the three angles can no longer describe every orientation. This is **gimbal lock**. Try it: press **Pitch to 90°**, then **Add 20° to yaw and roll**.
+
+```{=html}
+<div class="sim" id="rotation-sim">
+  <canvas class="cm-canvas" aria-label="A quadrotor rotated by yaw, pitch and roll; drag to orbit"></canvas>
+  <div class="sim__controls">
+    <label>Yaw ψ <input type="range" name="yaw" min="-180" max="180" step="1" value="30"><output></output></label>
+    <label>Pitch θ <input type="range" name="pitch" min="-90" max="90" step="1" value="20"><output></output></label>
+    <label>Roll φ <input type="range" name="roll" min="-180" max="180" step="1" value="10"><output></output></label>
+  </div>
+  <div class="sim__controls">
+    <button type="button" class="btn btn-gold-outline btn-sm" data-action="lock">Pitch to 90°</button>
+    <button type="button" class="btn btn-gold-outline btn-sm" data-action="both">Add 20° to yaw and roll</button>
+    <button type="button" class="btn btn-gold-outline btn-sm" data-action="reset">Reset</button>
+  </div>
+  <div class="cm-mats"></div>
+  <p class="sim__readout"></p>
+</div>
+```
+
+Gimbal lock is not a curiosity. A flight controller that integrates Euler angles can misbehave during aggressive maneuvers, and an estimator near the singularity becomes numerically unstable. That is why the internals of most robot software use one of the representations below.
+
+### Axis-angle and Rodrigues' formula
+
+Euler's rotation theorem says that every rotation is a single turn by an angle $\theta$ about some unit axis $\mathbf{k}$. Packing the two into one vector $\boldsymbol{\omega} = \theta \mathbf{k}$ gives a compact, singularity-free description for small and moderate rotations. **Rodrigues' formula** converts it to a matrix:
+
+$$
+R = I + \sin\theta\, [\mathbf{k}]_\times + (1 - \cos\theta)\, [\mathbf{k}]_\times^2,
+\qquad
+[\mathbf{k}]_\times = \begin{bmatrix} 0 & -k_z & k_y \\ k_z & 0 & -k_x \\ -k_y & k_x & 0 \end{bmatrix}.
+$$
+
+OpenCV uses this form for camera poses: the `rvec` returned by calibration and pose estimation is exactly $\boldsymbol{\omega}$, and `cv2.Rodrigues` converts between the two. The figure above shows the axis-angle equivalent of every orientation you set.
+
+### Quaternions
+
+A **unit quaternion** $q = (w, x, y, z)$ with $w = \cos(\theta/2)$ and $(x, y, z) = \sin(\theta/2)\,\mathbf{k}$ stores the same axis and angle in four numbers. Quaternions never suffer gimbal lock, compose with a cheap multiplication, and interpolate smoothly, which is why state estimators, flight controllers and game engines use them. Their one quirk is that $q$ and $-q$ describe the same rotation.
+
+## Extrinsics: where the camera is
+
+The **extrinsic parameters** describe the camera's pose: a rotation $R$ and a translation $\mathbf{t}$ that carry a point from world coordinates into camera coordinates,
+
+$$
+\mathbf{X}_c = R\, \mathbf{X}_w + \mathbf{t}.
+$$
+
+It is easy to get the direction wrong. $R$ and $\mathbf{t}$ map *world to camera*. If the camera's center sits at $\mathbf{C}$ in the world, then $\mathbf{t} = -R\,\mathbf{C}$, and the camera's own axes, written in the world frame, are the *rows* of $R$. In homogeneous coordinates (@sec-transformations) the extrinsics become a single $3 \times 4$ matrix $[R \mid \mathbf{t}]$ acting on $(X, Y, Z, 1)$.
+
+## Intrinsics: how the camera sees
+
+The **intrinsic parameters** map normalized image coordinates $(x, y)$ to pixels. They collect into the **camera matrix**
+
+$$
+K = \begin{bmatrix} f_x & s & c_x \\ 0 & f_y & c_y \\ 0 & 0 & 1 \end{bmatrix},
+\qquad
+\begin{bmatrix} u \\ v \\ 1 \end{bmatrix} = K \begin{bmatrix} x \\ y \\ 1 \end{bmatrix}.
+$$
+
+- $f_x$ and $f_y$ are the focal length measured in pixels. If the lens has focal length $f$ in millimeters and each pixel is $p$ millimeters wide, $f_x = f / p$. A 4 mm lens on a sensor with 2 µm pixels has $f_x = 2000$.
+- $(c_x, c_y)$ is the **principal point**, where the optical axis meets the sensor. It is close to the image center but rarely exactly at it.
+- Different values of $f_x$ and $f_y$ mean non-square pixels, and the **skew** $s$ models axes that are not perpendicular. On modern sensors $f_x \approx f_y$ and $s \approx 0$.
+
+Change each parameter and watch what it does to the image of a checkerboard held one meter from the camera.
+
+```{=html}
+<div class="sim" id="intrinsics-sim">
+  <canvas class="cm-canvas" aria-label="A checkerboard projected with the chosen intrinsic parameters"></canvas>
+  <div class="sim__controls">
+    <label>f<sub>x</sub> <input type="range" name="fx" min="250" max="1100" step="10" value="600"><output></output></label>
+    <label>f<sub>y</sub> <input type="range" name="fy" min="250" max="1100" step="10" value="600"><output></output></label>
+    <label>c<sub>x</sub> <input type="range" name="cx" min="120" max="520" step="5" value="320"><output></output></label>
+    <label>c<sub>y</sub> <input type="range" name="cy" min="90" max="390" step="5" value="240"><output></output></label>
+    <label>Skew s <input type="range" name="s" min="-300" max="300" step="10" value="0"><output></output></label>
+    <button type="button" class="btn btn-gold-outline btn-sm" data-action="reset">Reset</button>
+  </div>
+  <div class="cm-mats"></div>
+</div>
+```
+
+## The projection matrix
+
+Putting the pieces together gives the complete pinhole camera model in one line:
+
+$$
+\lambda \begin{bmatrix} u \\ v \\ 1 \end{bmatrix}
+= K \,[\,R \mid \mathbf{t}\,] \begin{bmatrix} X_w \\ Y_w \\ Z_w \\ 1 \end{bmatrix}
+= P \begin{bmatrix} X_w \\ Y_w \\ Z_w \\ 1 \end{bmatrix},
+$$
+
+where $\lambda = Z_c$ is the depth of the point and $P = K[R \mid \mathbf{t}]$ is the $3 \times 4$ **projection matrix**. It has 11 degrees of freedom: 5 intrinsic and 6 extrinsic (it is only defined up to scale). Compare with @sec-image-formation: the pinhole formula $x = fX/Z$ is this equation with $R = I$, $\mathbf{t} = 0$, no principal point offset and units of millimeters.
+
+Below, the left panel shows the world from outside: three boxes, a floor grid, the world axes and the camera with its viewing frustum. The right panel shows what the camera sees, computed with $P = K[R \mid \mathbf{t}]$. Move the camera, turn it and change its intrinsics. Drag the left panel to look around.
+
+```{=html}
+<div class="sim" id="cam3d-sim">
+  <div class="cm-grid">
+    <figure><canvas aria-label="The scene from outside, with the camera and its frustum; drag to orbit"></canvas><figcaption>The world, seen from outside</figcaption></figure>
+    <figure><canvas aria-label="The image the camera records"></canvas><figcaption>What the camera sees (640 × 480)</figcaption></figure>
+  </div>
+  <div class="sim__controls">
+    <label>Camera x <input type="range" name="cx_" min="-3" max="3" step="0.1" value="0"><output></output></label>
+    <label>Camera y <input type="range" name="cy_" min="-3" max="3" step="0.1" value="0"><output></output></label>
+    <label>Camera z <input type="range" name="cz_" min="0.2" max="4" step="0.1" value="1"><output></output></label>
+  </div>
+  <div class="sim__controls">
+    <label>Yaw <input type="range" name="yaw" min="-60" max="60" step="1" value="0"><output></output></label>
+    <label>Pitch <input type="range" name="pitch" min="-45" max="45" step="1" value="0"><output></output></label>
+    <label>Roll <input type="range" name="roll" min="-90" max="90" step="1" value="0"><output></output></label>
+  </div>
+  <div class="sim__controls">
+    <label>Focal length <input type="range" name="f" min="150" max="1200" step="10" value="500"><output></output></label>
+    <label>c<sub>x</sub> <input type="range" name="u0" min="120" max="520" step="5" value="320"><output></output></label>
+    <label>c<sub>y</sub> <input type="range" name="v0" min="90" max="390" step="5" value="240"><output></output></label>
+    <button type="button" class="btn btn-gold-outline btn-sm" data-action="reset">Reset camera</button>
+  </div>
+  <div class="cm-mats"></div>
+</div>
+```
+
+::: {.callout-tip}
+## Things to try
+- Raise the camera and pitch it down. Which entries of $R$ change, and which of $\mathbf{t}$?
+- Increase the focal length and watch the frustum narrow in the left panel while the boxes grow in the right one.
+- Move the principal point. The frustum tilts sideways even though the camera does not rotate: shifting $c_x$ is like shifting the sensor behind the lens.
+:::
+
+## Lens distortion
+
+Real lenses bend light in ways the pinhole model ignores. The most important effect is **radial distortion**: points are pushed toward or away from the image center by an amount that grows with their distance $r$ from it. Lenses can also be slightly tilted relative to the sensor, which adds **tangential distortion**. The standard model, used by OpenCV, applies to normalized coordinates $(x, y)$ with $r^2 = x^2 + y^2$:
+
+$$
+\begin{aligned}
+x_d &= x\,(1 + k_1 r^2 + k_2 r^4 + k_3 r^6) + 2 p_1 x y + p_2 (r^2 + 2x^2), \\
+y_d &= y\,(1 + k_1 r^2 + k_2 r^4 + k_3 r^6) + p_1 (r^2 + 2y^2) + 2 p_2 x y.
+\end{aligned}
+$$
+
+Negative $k_1$ gives **barrel** distortion, common in the wide-angle lenses robots favor; positive $k_1$ gives **pincushion** distortion. The distorted coordinates then pass through $K$ as before. Very wide fisheye lenses need a different model altogether (OpenCV's `cv2.fisheye` module).
+
+Bend the drone scene from @sec-image-formation with your own lens below. The gold grid shows where straight lines in the world end up. Then press **Undistort**: if you know the parameters, the distortion can be removed exactly.
+
+```{=html}
+<div class="sim" id="distortion-sim">
+  <canvas class="sim__canvas" aria-label="The drone scene warped by the chosen lens distortion"></canvas>
+  <div class="sim__controls">
+    <label>k<sub>1</sub> <input type="range" name="k1" min="-0.6" max="0.6" step="0.01" value="-0.35"><output></output></label>
+    <label>k<sub>2</sub> <input type="range" name="k2" min="-0.3" max="0.3" step="0.01" value="0.1"><output></output></label>
+    <label>p<sub>1</sub> <input type="range" name="p1" min="-0.05" max="0.05" step="0.002" value="0"><output></output></label>
+    <label>p<sub>2</sub> <input type="range" name="p2" min="-0.05" max="0.05" step="0.002" value="0"><output></output></label>
+  </div>
+  <div class="sim__controls">
+    <button type="button" class="btn btn-gold-outline btn-sm" data-action="undistort">Undistort: off</button>
+    <button type="button" class="btn btn-gold-outline btn-sm is-on" data-action="grid">Grid</button>
+    <button type="button" class="btn btn-gold-outline btn-sm" data-action="reset">Reset</button>
+  </div>
+  <p class="sim__readout"></p>
+</div>
+```
+
+The distortion model is easy to apply but has no closed-form inverse, so undistortion solves for $(x, y)$ given $(x_d, y_d)$ numerically, here by a few rounds of fixed-point iteration. In practice OpenCV precomputes the mapping once with `cv2.initUndistortRectifyMap` and then undistorts every frame with a fast lookup, `cv2.remap`.
+
+## Calibration
+
+**Calibration** measures $K$ and the distortion coefficients for a real camera. The standard approach, introduced by Zhengyou Zhang in 2000, needs nothing more than a printed checkerboard.
+
+### Zhang's method
+
+The idea is to photograph a flat pattern whose geometry is known exactly, from several viewpoints.
+
+1. **Place the board at $Z = 0$.** In the board's own frame every corner has $Z_w = 0$, so the projection equation loses a column and becomes a $3 \times 3$ homography between the board and the image:
+   $$
+   \lambda \begin{bmatrix} u \\ v \\ 1 \end{bmatrix} = K\,[\,\mathbf{r}_1 \;\; \mathbf{r}_2 \;\; \mathbf{t}\,] \begin{bmatrix} X \\ Y \\ 1 \end{bmatrix} = H \begin{bmatrix} X \\ Y \\ 1 \end{bmatrix}.
+   $$
+2. **Estimate one homography per view.** $H$ has 8 degrees of freedom and each detected corner gives two equations, so four corners suffice; a real board gives dozens, solved by least squares as in @sec-transformations.
+3. **Use the rotation's structure.** Because $\mathbf{r}_1$ and $\mathbf{r}_2$ are orthonormal, each homography gives two linear constraints on the symmetric matrix $B = K^{-\top} K^{-1}$. With three or more views the constraints determine $B$, and a Cholesky factorization recovers $K$.
+4. **Refine everything.** With $K$ known, each view's $R$ and $\mathbf{t}$ follow from its homography. A nonlinear least-squares optimization then adjusts all parameters, including distortion, to minimize the reprojection error.
+
+### Reprojection error
+
+The quality of a calibration is measured by the **reprojection error**: project the known board corners through the estimated model and measure, in pixels, how far they land from the detected corners,
+
+$$
+E = \sqrt{\frac{1}{N} \sum_{i=1}^{N} \big\lVert \mathbf{u}_i - \pi(K, \mathbf{d}, R_j, \mathbf{t}_j, \mathbf{X}_i) \big\rVert^2 }.
+$$
+
+A good calibration of a typical camera reaches well under one pixel. A low error is necessary but not sufficient: if every image shows the board in the middle of the frame, the error can look excellent while the distortion near the edges is poorly constrained.
+
+### Choosing the views
+
+Which views you collect matters as much as how many. Capture board poses below and watch what the calibration needs.
+
+```{=html}
+<div class="sim" id="coverage-sim">
+  <canvas class="cm-canvas" aria-label="Detected checkerboard corners from all captured views, with covered image regions shaded"></canvas>
+  <div class="sim__controls">
+    <button type="button" class="btn btn-primary btn-sm" data-action="add">Capture a view</button>
+    <button type="button" class="btn btn-gold-outline btn-sm" data-action="clear">Clear</button>
+  </div>
+  <p class="sim__readout"></p>
+</div>
+```
+
+### Calibrate a camera in your browser
+
+The cell below runs a complete calibration with OpenCV. It simulates a camera with a known $K$ and barrel distortion, photographs a 9 × 6 checkerboard from fifteen random poses, adds a little detection noise, and then hands only the 2D corners to `cv2.calibrateCamera`. Compare what it recovers with the truth. Press **Run Code**; the first run takes a few seconds while OpenCV loads.
+
+```{pyodide}
+import cv2
+import numpy as np
+import matplotlib.pyplot as plt
+
+rng = np.random.default_rng(0)
+
+# The true camera (unknown to the calibration)
+K_true = np.array([[800., 0, 330], [0, 790., 235], [0, 0, 1]])
+d_true = np.array([-0.28, 0.10, 0.001, -0.0005, 0.0])   # k1, k2, p1, p2, k3
+W, H = 640, 480
+
+# A 9 x 6 checkerboard with 30 mm squares, at Z = 0 in its own frame
+cols, rows, sq = 9, 6, 0.03
+board = np.zeros((rows * cols, 3), np.float32)
+board[:, :2] = np.mgrid[0:cols, 0:rows].T.reshape(-1, 2) * sq
+board -= board.mean(axis=0)
+
+obj_pts, img_pts = [], []
+while len(img_pts) < 15:
+    rvec = rng.uniform(-0.6, 0.6, 3)                       # random tilt
+    tvec = np.array([rng.uniform(-0.1, 0.1), rng.uniform(-0.07, 0.07), rng.uniform(0.32, 0.55)])
+    uv, _ = cv2.projectPoints(board, rvec, tvec, K_true, d_true)
+    uv = uv.reshape(-1, 2) + rng.normal(0, 0.3, (len(board), 2))  # detection noise
+    if (uv[:, 0] > 5).all() and (uv[:, 0] < W - 5).all() and (uv[:, 1] > 5).all() and (uv[:, 1] < H - 5).all():
+        obj_pts.append(board)
+        img_pts.append(uv.astype(np.float32).reshape(-1, 1, 2))
+
+# k3 is left at zero: with few views it trades off against k2 and is rarely needed
+rms, K, dist, rvecs, tvecs = cv2.calibrateCamera(obj_pts, img_pts, (W, H), None, None,
+                                                 flags=cv2.CALIB_FIX_K3)
+
+np.set_printoptions(precision=3, suppress=True)
+print(f"Reprojection error: {rms:.3f} px over {len(img_pts)} views\n")
+print("Estimated K:\n", K, "\n\nTrue K:\n", K_true)
+print("\nEstimated distortion (k1, k2, p1, p2):", dist.ravel()[:4])
+print("True distortion      (k1, k2, p1, p2):", d_true[:4])
+
+# Per-view error and one view with detected (gold) and reprojected (dark) corners
+errs = []
+for o, i, r, t in zip(obj_pts, img_pts, rvecs, tvecs):
+    p, _ = cv2.projectPoints(o, r, t, K, dist)
+    errs.append(np.sqrt(np.mean(np.sum((p - i) ** 2, axis=2))))
+
+fig, axes = plt.subplots(1, 2, figsize=(12, 3.6))
+axes[0].bar(range(1, len(errs) + 1), errs, color="#cfb97d")
+axes[0].set_xlabel("View"); axes[0].set_ylabel("RMS error (px)"); axes[0].set_title("Reprojection error per view")
+p, _ = cv2.projectPoints(obj_pts[0], rvecs[0], tvecs[0], K, dist)
+axes[1].scatter(img_pts[0][:, 0, 0], img_pts[0][:, 0, 1], s=40, c="#cfb97d", label="detected")
+axes[1].scatter(p[:, 0, 0], p[:, 0, 1], s=8, c="#1d1e00", label="reprojected")
+axes[1].set_xlim(0, W); axes[1].set_ylim(H, 0); axes[1].set_aspect("equal"); axes[1].legend()
+axes[1].set_title("View 1")
+plt.show()
+```
+
+::: {.callout-tip}
+## Exercise
+Change the loop so it keeps only views with a small tilt, for example `rvec = rng.uniform(-0.05, 0.05, 3)`. What happens to the estimated focal length and to the reprojection error? Why can a near-perfect reprojection error still hide a bad calibration?
+:::
+
+On a real camera the only change is where the 2D corners come from. You photograph a printed board and detect its corners with `cv2.findChessboardCorners`, refine them to sub-pixel accuracy with `cv2.cornerSubPix`, and pass them to the same function.
+
+```{pyodide}
+import cv2
+import numpy as np
+import matplotlib.pyplot as plt
+
+# Draw a synthetic photo of a checkerboard, then find its corners
+img = np.full((360, 480), 235, np.uint8)
+s = 40
+for r in range(7):
+    for c in range(10):
+        if (r + c) % 2 == 0:
+            cv2.rectangle(img, (40 + c * s, 40 + r * s), (40 + (c + 1) * s, 40 + (r + 1) * s), 20, -1)
+
+# Tilt it with a homography so it looks like a real photo
+src = np.float32([[0, 0], [480, 0], [480, 360], [0, 360]])
+dst = np.float32([[30, 20], [460, 50], [430, 340], [50, 320]])
+img = cv2.warpPerspective(img, cv2.getPerspectiveTransform(src, dst), (480, 360), borderValue=235)
+
+found, corners = cv2.findChessboardCorners(img, (9, 6))
+print("Board found:", found, " corners:", 0 if corners is None else len(corners))
+if found:
+    corners = cv2.cornerSubPix(img, corners, (5, 5), (-1, -1),
+                               (cv2.TERM_CRITERIA_EPS + cv2.TERM_CRITERIA_MAX_ITER, 30, 0.01))
+    vis = cv2.drawChessboardCorners(cv2.cvtColor(img, cv2.COLOR_GRAY2RGB), (9, 6), corners, found)
+    plt.figure(figsize=(6, 4.5)); plt.imshow(vis); plt.axis("off"); plt.show()
+```
+
+## Calibration in practice
+
+A few lessons that save robotics projects:
+
+- **Calibrate at the settings you will use.** Focus, zoom and even some aperture changes alter the intrinsics. A camera that refocuses (autofocus) or is bumped needs recalibration; many teams lock focus with a drop of glue.
+- **Cover the whole image and tilt the board.** Corners near the edges constrain distortion, and tilted views separate focal length from distance, as the coverage figure above showed.
+- **Keep the board flat and the images sharp.** A warped board or motion blur biases the result. Good lighting lets you use a short shutter time (@sec-image-formation).
+- **Mind the shutter.** Rolling-shutter cameras distort moving boards. Hold the board still, or use a calibration tool that models rolling shutter.
+- **Calibrate the extrinsics to other sensors too.** A robot rarely uses a camera alone. The rigid transform between the camera and an IMU, a lidar or a second camera must also be measured, with tools such as Kalibr for camera and IMU pairs. Even event cameras, which have no frames at all, are calibrated with the same model by first reconstructing images from their events.
+
+## Summary
+
+- A camera model is a chain of frames: world, camera, image plane and pixels.
+- Rotations have three degrees of freedom. Euler angles are intuitive but suffer gimbal lock; axis-angle vectors and quaternions avoid it.
+- Extrinsics $[R \mid \mathbf{t}]$ say where the camera is; intrinsics $K$ say how it turns directions into pixels. Together, $P = K[R \mid \mathbf{t}]$.
+- Lens distortion bends straight lines. It is modeled with radial and tangential coefficients and removed by undistortion.
+- Zhang's method calibrates a camera from several views of a planar checkerboard, and the reprojection error measures how well the model fits.
+
+```{=html}
+<script src="../demos/camera-models.js"></script>
+```

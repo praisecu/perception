@@ -14,7 +14,7 @@
 This book is written for students meeting computer vision and robot perception for the first time. It is built to be used, not just read.
 
 ::: {.book-cards}
-[[Live demos]{.book-card__label}[Run OpenCV on your webcam]{.book-card__title}[Demos run in your browser. Video stays on your device and is never uploaded.]{.book-card__text}](chapters/edges.qmd){.book-card}
+[[Live demos]{.book-card__label}[Run OpenCV on your webcam]{.book-card__title}[Demos run in your browser. Video stays on your device and is never uploaded.]{.book-card__text}](chapters/features.qmd){.book-card}
 
 [[Editable code]{.book-card__label}[Change it and press Run]{.book-card__title}[Real Python and OpenCV in the page, with nothing to install.]{.book-card__text}](chapters/image-formation.qmd){.book-card}
 :::
@@ -26,7 +26,11 @@ This book is written for students meeting computer vision and robot perception f
 
 [[Chapter 2]{.book-card__label}[Image Formation]{.book-card__title}[Pinholes, lenses, exposure and color sensors, with interactive figures.]{.book-card__text}](chapters/image-formation.qmd){.book-card}
 
-[[Chapter 3]{.book-card__label}[Edges]{.book-card__title}[Gradients and the Canny detector, live on your camera.]{.book-card__text}](chapters/edges.qmd){.book-card}
+[[Chapter 3]{.book-card__label}[Features]{.book-card__title}[Filters, edges, corners and descriptors, with live webcam demos.]{.book-card__text}](chapters/features.qmd){.book-card}
+
+[[Chapter 4]{.book-card__label}[Projections and Transformations]{.book-card__title}[Homogeneous coordinates, homographies, RANSAC and panoramas.]{.book-card__text}](chapters/transformations.qmd){.book-card}
+
+[[Chapter 5]{.book-card__label}[Camera Models and Calibration]{.book-card__title}[Intrinsics, extrinsics, rotations, lens distortion and calibration.]{.book-card__text}](chapters/camera-models.qmd){.book-card}
 :::
 
 ::: {.callout-note}

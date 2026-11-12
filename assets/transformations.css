@@ -1,0 +1,221 @@
+/* Chapter 4: Projections and Transformations */
+
+.tf__canvas-wrap {
+  position: relative;
+}
+
+.tf__canvas {
+  display: block;
+  width: 100%;
+  height: auto;
+  border-radius: 12px;
+  background: rgba(207, 185, 125, 0.06);
+  touch-action: none;
+}
+
+.tf__canvas--drag {
+  cursor: grab;
+}
+
+.tf__canvas--drag:active {
+  cursor: grabbing;
+}
+
+.tf__canvas--pixels {
+  max-width: 384px;
+  margin: 0 auto;
+  image-rendering: pixelated;
+}
+
+.tf__layout {
+  display: grid;
+  grid-template-columns: minmax(0, 1fr) 240px;
+  gap: 1rem;
+  align-items: start;
+}
+
+.tf__side {
+  display: grid;
+  gap: 0.8rem;
+}
+
+.tp__class {
+  padding: 0.6rem 0.8rem;
+  border-radius: 12px;
+  background: #343607;
+  color: #f7df91;
+  font-family: "Nunito Sans", sans-serif;
+  font-weight: 800;
+  line-height: 1.25;
+}
+
+.tp__class span {
+  display: block;
+  margin-top: 0.15rem;
+  font-size: 0.78rem;
+  font-weight: 600;
+  opacity: 0.8;
+}
+
+.tp__props {
+  margin: 0;
+  padding: 0;
+  list-style: none;
+  font-size: 0.9rem;
+}
+
+.tp__props li {
+  padding: 0.15rem 0;
+}
+
+.tp__props li.ok {
+  color: #2f8f5b;
+  font-weight: 600;
+}
+
+.tp__props li.no {
+  opacity: 0.55;
+  text-decoration: line-through;
+}
+
+.tp__matrix {
+  display: flex;
+  align-items: center;
+  gap: 0.6rem;
+  overflow-x: auto;
+}
+
+.tp__mlabel {
+  font-family: "Nunito Sans", sans-serif;
+  font-weight: 800;
+}
+
+.mat {
+  display: inline-block;
+  padding: 0.2rem 0.45rem;
+  border-left: 2px solid currentColor;
+  border-right: 2px solid currentColor;
+  border-radius: 6px;
+}
+
+.mat__grid {
+  display: grid;
+  grid-template-columns: repeat(3, auto);
+  gap: 0.15rem 0.6rem;
+  font-family: ui-monospace, "Cascadia Mono", Consolas, monospace;
+  font-size: 0.85rem;
+  text-align: right;
+}
+
+.mat__cell {
+  padding: 0.05rem 0.25rem;
+  border-radius: 4px;
+}
+
+.mat__cell.lin { background: rgba(47, 143, 91, 0.16); }
+.mat__cell.trn { background: rgba(207, 185, 125, 0.32); }
+.mat__cell.prj { background: rgba(194, 70, 58, 0.18); }
+
+.tf__legend {
+  display: flex;
+  flex-wrap: wrap;
+  gap: 0.4rem 0.9rem;
+  margin: 0.5rem 0 0;
+  font-size: 0.8rem;
+  opacity: 0.85;
+}
+
+.tf__legend span::before {
+  display: inline-block;
+  width: 0.8em;
+  height: 0.8em;
+  margin-right: 0.35em;
+  border-radius: 3px;
+  vertical-align: -0.05em;
+  content: "";
+}
+
+.tf__legend .lin::before { background: rgba(47, 143, 91, 0.45); }
+.tf__legend .trn::before { background: rgba(207, 185, 125, 0.75); }
+.tf__legend .prj::before { background: rgba(194, 70, 58, 0.45); }
+
+/* Homogeneous coordinates drawing */
+.hc__axis { stroke: currentColor; stroke-opacity: 0.4; stroke-width: 1.5; }
+.hc__plane { stroke: #cfb97d; stroke-width: 3; }
+.hc__ray { stroke: #3b6fb6; stroke-width: 2; stroke-dasharray: 6 5; }
+.hc__point { fill: #3b6fb6; }
+.hc__image { fill: #cfb97d; stroke: #fff; stroke-width: 2; }
+.hc__label { fill: currentColor; font-family: "Nunito Sans", sans-serif; font-size: 14px; font-weight: 700; }
+.hc__label--gold { fill: #b39a52; }
+
+/* RANSAC legend */
+.leg::before {
+  display: inline-block;
+  width: 1.4em;
+  height: 3px;
+  margin: 0 0.35em 0.2em 0;
+  vertical-align: middle;
+  content: "";
+}
+
+.leg { margin-right: 0.9rem; font-size: 0.85rem; }
+.leg--green::before { background: #2f8f5b; }
+.leg--red::before { background: #c2463a; }
+.leg--gold::before { background: #cfb97d; }
+
+/* Panorama */
+.pano__inputs {
+  display: grid;
+  grid-template-columns: 1fr 1fr;
+  gap: 0.6rem;
+}
+
+.pano__inputs img,
+.pano__out,
+.pano__matches {
+  display: block;
+  width: 100%;
+  height: auto;
+  border-radius: 10px;
+}
+
+.pano__inputs figure,
+.pano__result figure {
+  margin: 0;
+}
+
+.pano__inputs figcaption,
+.pano__result figcaption {
+  margin-top: 0.25rem;
+  font-size: 0.82rem;
+  opacity: 0.7;
+  text-align: center;
+}
+
+.pano__result {
+  display: grid;
+  gap: 0.8rem;
+  margin-top: 0.8rem;
+}
+
+@media (max-width: 760px) {
+  .tf__layout {
+    grid-template-columns: 1fr;
+  }
+}
+
+@media (max-width: 520px) {
+  .pano__inputs {
+    grid-template-columns: 1fr;
+  }
+}
+
+/* The transformation table scrolls sideways on narrow screens. */
+.tf__table {
+  overflow-x: auto;
+}
+
+.tf__table table {
+  min-width: 520px;
+}
+
