@@ -1,11 +1,60 @@
+/*
+ * Fonts and colors from praisecu.com: Nunito Sans headings, Open Sans
+ * body text, CU gold accents on a near-black or white page.
+ */
+
 /*-- scss:defaults --*/
-$primary: #8a6d1d;
-$link-color: #8a6d1d;
-$font-family-sans-serif: "Nunito", system-ui, -apple-system, "Segoe UI", sans-serif;
+$font-family-sans-serif: "Open Sans", Arial, Helvetica, sans-serif;
+$headings-font-family: "Nunito Sans", Nunito, sans-serif;
+$headings-font-weight: 600;
+$font-size-root: 16px;
+$line-height-base: 1.7;
+
 
 /*-- scss:rules --*/
-@import url("https://fonts.googleapis.com/css2?family=Nunito:wght@400;700;800&display=swap");
+@import url("https://fonts.googleapis.com/css2?family=Nunito+Sans:wght@300;400;600;700;800&family=Open+Sans:wght@400;600;700&display=swap");
 
-h1, h2, h3, .title {
+h1, h2, h3, h4, .title, .quarto-title .title {
+  font-family: $headings-font-family;
+  font-weight: 600;
+  letter-spacing: -0.02em;
+}
+
+h1.title, .quarto-title h1 {
+  font-size: 2.4rem;
+}
+
+a {
+  font-weight: 600;
+  text-decoration-thickness: 1px;
+  text-underline-offset: 3px;
+}
+
+/* Sidebar and navigation in the site's heading font */
+.sidebar, .sidebar-title, .sidebar-item, #TOC, .nav-page {
+  font-family: $headings-font-family;
+}
+
+.sidebar-title a {
   font-weight: 800;
+}
+
+/* Buttons and pills like the lab site's gold buttons */
+.btn-primary {
+  background: #343607;
+  border: 1px solid #a79047;
+  color: #f7df91;
+  font-weight: 600;
+  border-radius: 10px;
+}
+
+.btn-primary:hover,
+.btn-primary:focus {
+  background: #4f4604;
+  border-color: #cfb97d;
+  color: #fff3c8;
+}
+
+.callout {
+  border-radius: 12px;
 }

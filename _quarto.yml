@@ -29,8 +29,9 @@ book:
 format:
   live-html:
     theme:
-      light: [cosmo, assets/book.scss]
+      light: [cosmo, assets/book.scss, assets/book-light.scss]
       dark: [darkly, assets/book.scss, assets/book-dark.scss]
+    respect-user-color-scheme: true
     css: assets/demos.css
     number-sections: true
     toc: true

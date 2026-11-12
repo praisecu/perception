@@ -49,6 +49,10 @@
   font-size: 0.9rem;
 }
 
+.cv-demo__controls input[type="range"] {
+  accent-color: #cfb97d;
+}
+
 .cv-demo__controls output {
   min-width: 2.5em;
   font-variant-numeric: tabular-nums;
