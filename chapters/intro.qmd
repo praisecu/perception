@@ -74,6 +74,41 @@ Several reasons stand out.
 
 **A camera loses information.** An image is a two-dimensional projection of a three-dimensional world. Depth is discarded at the moment of capture, and many different scenes produce exactly the same image. A small object nearby and a large object far away can look identical. Recovering the world from images is therefore an *inverse problem* without a unique answer, and every perception system relies on assumptions, priors or extra measurements to resolve the ambiguity.
 
+
+::: {.callout-tip appearance="simple"}
+## Try it: find the object
+There is an object in the picture below. Can you find it? Then press **Play motion** and watch it again.
+:::
+
+```{=html}
+<figure class="camo" id="camo">
+  <div class="camo__stage">
+    <img class="camo__still" src="media/intro/camouflage-still.jpg" alt="A surface covered in newspaper clippings, with an object hidden somewhere on it">
+    <video class="camo__video" src="media/intro/camouflage.mp4" muted loop playsinline preload="none" hidden></video>
+    <img class="camo__mask" src="media/intro/camouflage-mask.png" alt="" hidden>
+  </div>
+  <div class="camo__controls">
+    <button type="button" class="btn btn-primary btn-sm" data-camo="play">Play motion</button>
+    <button type="button" class="btn btn-gold-outline btn-sm" data-camo="reveal">Reveal the object</button>
+    <button type="button" class="btn btn-gold-outline btn-sm" data-camo="reset">Reset</button>
+  </div>
+  <figcaption>A camouflaged object is almost invisible in a single image. The moment it moves, it stands out. Motion carries information that one picture cannot.</figcaption>
+</figure>
+<script>
+(() => {
+  const fig = document.getElementById("camo");
+  const still = fig.querySelector(".camo__still");
+  const video = fig.querySelector(".camo__video");
+  const mask = fig.querySelector(".camo__mask");
+  fig.addEventListener("click", (event) => {
+    const action = event.target.closest("[data-camo]")?.dataset.camo;
+    if (action === "play") { still.hidden = true; video.hidden = false; video.play(); }
+    if (action === "reveal") { mask.hidden = !mask.hidden; }
+    if (action === "reset") { video.pause(); video.currentTime = 0; video.hidden = true; still.hidden = false; mask.hidden = true; }
+  });
+})();
+</script>
+```
 **The same thing never looks the same twice.** Lighting, viewpoint, occlusion, motion blur, sensor noise, reflections and weather all change the measurement while the underlying object stays the same. A useful perception system must be invariant to the changes that do not matter and sensitive to the ones that do.
 
 **There is too much data and too little time.** Cameras produce millions of measurements per frame, many times per second. Biological vision copes by being highly selective: the eye samples finely only at the center of gaze, and the brain processes only a small fraction of what reaches the retina in detail. Robots face the same constraint, sharpened by limits on power, weight and onboard computation.
@@ -86,23 +121,96 @@ Nature offers proof that capable perception does not require enormous resources.
 
 Birds and insects solve the same problem, flying through a narrow gap, in very different ways. Many birds have sharp, fast eyes and enough neural processing to judge a gap at a glance and fly straight through at speed. An insect has neither. Its compound eyes have low resolution, and its brain is tiny. Instead it *moves to see*: it sweeps from side to side in front of the gap, uses the resulting image motion to tell near from far, and then steers toward the opening.
 
+
+::: {layout-ncol=2}
+![A hummingbird judges gaps with sharp, fast eyes.](media/intro/hummingbird.jpg){fig-alt="A hummingbird in flight"}
+
+![A honeybee navigates with low-resolution compound eyes and about a million neurons.](media/intro/honeybee.jpg){fig-alt="A honeybee with wings spread"}
+:::
+
+Robots can borrow the insect's trick. In GapFlyt, a small quadrotor finds a gap of unknown shape and size by moving in front of it and watching how the scene slides past, then flies through it using only its onboard camera and computer.
+
+```{=html}
+<figure class="clip">
+  <video src="media/intro/gapflyt.mp4" poster="media/intro/gapflyt.jpg" autoplay muted loop playsinline></video>
+  <figcaption>GapFlyt: active perception lets a quadrotor fly through an unknown gap (shown at quarter speed).</figcaption>
+</figure>
+```
 The insect's strategy carries two ideas that run through this book:
 
 - **Perception can be active.** A robot can choose how to move, where to look and what to sense in order to make perception easier. This idea, formalized as *active vision* and *active perception* in the late 1980s, turns some hard problems into much simpler ones.
 - **Perception can be minimal.** A robot rarely needs a complete model of the world. It needs the information that matters for its task. Designing perception around the task, rather than around a general-purpose reconstruction, is what makes small, low-power robots possible.
 
+
+```{=html}
+<figure class="clip-grid">
+  <video src="media/intro/drone-view.mp4" poster="media/intro/drone-view.jpg" autoplay muted loop playsinline></video>
+  <video src="media/intro/drone-flow.mp4" poster="media/intro/drone-flow.jpg" autoplay muted loop playsinline></video>
+  <video src="media/intro/forest-flight.mp4" poster="media/intro/forest-flight.jpg" autoplay muted loop playsinline></video>
+  <video src="media/intro/tabletop.mp4" poster="media/intro/tabletop.jpg" autoplay muted loop playsinline></video>
+  <video src="media/intro/scale.mp4" poster="media/intro/scale.jpg" autoplay muted loop playsinline></video>
+  <video src="media/intro/camera-hw.mp4" poster="media/intro/camera-hw.jpg" autoplay muted loop playsinline></video>
+  <figcaption>Minimal perception in practice: tiny drones that fly indoors and through forests, custom sensors and lenses, and perception that runs on small, low-power hardware. Examples from the author's research.</figcaption>
+</figure>
+```
 ## A brief history
 
-Computer vision is younger than many engineering disciplines, but it has moved through several distinct eras.
+Computer vision is younger than most engineering disciplines, and it has been wonderfully overconfident from the start. Here is the story in ten stops.
 
-| Period | Milestone |
-|---|---|
-| 1960s | Images become digital. Larry Roberts recovers 3D block shapes from photographs (1963), and early projects aim to "solve vision" in a summer. |
-| 1969 | Azriel Rosenfeld publishes *Picture Processing by Computer*, the first textbook in the field, and later founds its first dedicated journal. |
-| 1980s | David Marr frames vision as a sequence of computational representations (*Vision*, 1982). Active vision and active perception emerge. |
-| 1990s to 2000s | Multiple-view geometry matures. Local features such as SIFT make matching and 3D reconstruction from photographs practical. |
-| 2012 | Deep convolutional networks win the ImageNet challenge by a wide margin, and learned representations begin to replace hand-designed ones. |
-| 2020s | Neural rendering (NeRF, Gaussian splatting) reconstructs photorealistic 3D scenes. Large foundation models learn general visual representations from vast data. |
+```{=html}
+<ol class="timeline">
+  <li class="timeline__item">
+    <span class="timeline__year">1963</span>
+    <strong class="timeline__title">The blocks world</strong>
+    <span class="timeline__text">Larry Roberts gets a computer to recover the 3D shape of toy blocks from a photograph. The world is simple, the lighting is perfect, and the field is born.</span>
+  </li>
+  <li class="timeline__item">
+    <span class="timeline__year">1966</span>
+    <strong class="timeline__title">A summer project</strong>
+    <span class="timeline__text">MIT's Summer Vision Project sets out to connect a camera to a computer and have it describe what it sees, in one summer. Sixty years later, the summer is still going.</span>
+  </li>
+  <li class="timeline__item">
+    <span class="timeline__year">1969</span>
+    <strong class="timeline__title">The first textbook</strong>
+    <span class="timeline__text">Azriel Rosenfeld publishes <em>Picture Processing by Computer</em> and later founds the field's first journal. Every image library you will use, OpenCV included, carries his ideas.</span>
+  </li>
+  <li class="timeline__item">
+    <span class="timeline__year">1982</span>
+    <strong class="timeline__title">Vision as computation</strong>
+    <span class="timeline__text">David Marr's <em>Vision</em> argues that seeing is a sequence of representations, from pixels to edges to surfaces to objects. The framework still shapes how we teach the subject.</span>
+  </li>
+  <li class="timeline__item">
+    <span class="timeline__year">1988</span>
+    <strong class="timeline__title">Move to see</strong>
+    <span class="timeline__text">Active vision and active perception show that a camera that moves with purpose can solve problems a still camera cannot. Insects knew this all along.</span>
+  </li>
+  <li class="timeline__item">
+    <span class="timeline__year">1999</span>
+    <strong class="timeline__title">Features that travel</strong>
+    <span class="timeline__text">SIFT finds the same points in different photos despite changes in scale and rotation. A decade later, researchers rebuild Rome in 3D from tourists' photos in about a day.</span>
+  </li>
+  <li class="timeline__item">
+    <span class="timeline__year">2012</span>
+    <strong class="timeline__title">The deep learning moment</strong>
+    <span class="timeline__text">A convolutional network trained on two gaming graphics cards wins the ImageNet challenge by a wide margin. Learned features start replacing hand-designed ones almost overnight.</span>
+  </li>
+  <li class="timeline__item">
+    <span class="timeline__year">2020</span>
+    <strong class="timeline__title">Photos become worlds</strong>
+    <span class="timeline__text">Neural radiance fields turn a few dozen photos into a 3D scene you can fly through from new viewpoints. Rendering and vision start to merge.</span>
+  </li>
+  <li class="timeline__item">
+    <span class="timeline__year">2023</span>
+    <strong class="timeline__title">See anything, in real time</strong>
+    <span class="timeline__text">Foundation models segment objects they were never trained on, and Gaussian splatting renders reconstructed scenes in real time. The tools reach everyday users.</span>
+  </li>
+  <li class="timeline__item timeline__item--now">
+    <span class="timeline__year">Now</span>
+    <strong class="timeline__title">Your turn</strong>
+    <span class="timeline__text">Robots that perceive with a few watts, explain what they see and know when they are unsure. The next stop on this line is yours to write.</span>
+  </li>
+</ol>
+```
 
 Each era kept what worked from the last. Geometry did not disappear when deep learning arrived; it became a source of structure, supervision and guarantees for learned systems.
 

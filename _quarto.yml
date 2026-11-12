@@ -7,6 +7,7 @@ project:
     - demos/*.js
     - assets/cu-logo.webp
     - assets/praise/*
+    - chapters/media/**
 
 book:
   title: "Fundamentals of Robot Perception"
