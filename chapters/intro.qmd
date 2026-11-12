@@ -122,11 +122,39 @@ Nature offers proof that capable perception does not require enormous resources.
 Birds and insects solve the same problem, flying through a narrow gap, in very different ways. Many birds have sharp, fast eyes and enough neural processing to judge a gap at a glance and fly straight through at speed. An insect has neither. Its compound eyes have low resolution, and its brain is tiny. Instead it *moves to see*: it sweeps from side to side in front of the gap, uses the resulting image motion to tell near from far, and then steers toward the opening.
 
 
-::: {layout-ncol=2}
-![A hummingbird judges gaps with sharp, fast eyes.](media/intro/hummingbird.jpg){fig-alt="A hummingbird in flight"}
-
-![A honeybee navigates with low-resolution compound eyes and about a million neurons.](media/intro/honeybee.jpg){fig-alt="A honeybee with wings spread"}
-:::
+```{=html}
+<div class="versus">
+  <figure class="versus__card">
+    <div class="versus__media">
+      <img src="media/intro/hummingbird.jpg" alt="A hummingbird in flight">
+      <span class="versus__tag">Bird</span>
+    </div>
+    <figcaption>
+      <strong>See, then fly</strong>
+      <span class="versus__facts">
+        <span><b>Eyes</b> Sharp and fast</span>
+        <span><b>Brain</b> Large</span>
+        <span><b>Strategy</b> Judge the gap at a glance</span>
+      </span>
+    </figcaption>
+  </figure>
+  <span class="versus__vs" aria-hidden="true">vs</span>
+  <figure class="versus__card">
+    <div class="versus__media">
+      <img src="media/intro/honeybee.jpg" alt="A honeybee with wings spread">
+      <span class="versus__tag">Insect</span>
+    </div>
+    <figcaption>
+      <strong>Move, then see</strong>
+      <span class="versus__facts">
+        <span><b>Eyes</b> Low resolution</span>
+        <span><b>Brain</b> About a million neurons</span>
+        <span><b>Strategy</b> Sweep in front, then steer</span>
+      </span>
+    </figcaption>
+  </figure>
+</div>
+```
 
 Robots can borrow the insect's trick. In GapFlyt, a small quadrotor finds a gap of unknown shape and size by moving in front of it and watching how the scene slides past, then flies through it using only its onboard camera and computer.
 
