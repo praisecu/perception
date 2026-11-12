@@ -496,3 +496,12 @@ html[data-theme="dark"] .versus__facts b {
     display: none;
   }
 }
+
+.versus__credit {
+  grid-column: 1 / -1;
+  margin: -0.4rem 0 0;
+  font-size: 0.78rem;
+  opacity: 0.6;
+  text-align: right;
+}
+

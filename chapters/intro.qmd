@@ -141,7 +141,7 @@ Birds and insects solve the same problem, flying through a narrow gap, in very d
   <span class="versus__vs" aria-hidden="true">vs</span>
   <figure class="versus__card">
     <div class="versus__media">
-      <img src="media/intro/honeybee.jpg" alt="A honeybee with wings spread">
+      <img src="media/intro/honeybee.jpg" alt="A honeybee in flight carrying pollen">
       <span class="versus__tag">Insect</span>
     </div>
     <figcaption>
@@ -153,6 +153,7 @@ Birds and insects solve the same problem, flying through a narrow gap, in very d
       </span>
     </figcaption>
   </figure>
+  <p class="versus__credit">Honeybee photo: <a href="https://commons.wikimedia.org/wiki/File:Bogdan_Suditu_-_Bee_(by).jpg">Bogdan Suditu</a>, <a href="https://creativecommons.org/licenses/by/2.0/">CC BY 2.0</a>, cropped.</p>
 </div>
 ```
 
