@@ -1,0 +1,17 @@
+# Preface {.unnumbered}
+
+This is an open online book on perception: how robots, from tiny drones to autonomous vehicles, turn light and other signals into an understanding of the world around them.
+
+It is written for students meeting computer vision and robot perception for the first time, and it is built to be used, not just read. Many chapters contain:
+
+- **Live demos** that run OpenCV on your own webcam, directly in the browser. Video is processed on your device and never uploaded.
+- **Editable code** you can change and run in the page, with no installation.
+
+::: {.callout-note}
+## Work in progress
+The book is being written. Chapters will appear here as they are ready.
+:::
+
+## About the author {.unnumbered}
+
+Chahat Deep Singh leads the Perception, Robotics, AI and Sensing ([PRAISe](https://www.praisecu.com)) Lab at the University of Colorado Boulder.

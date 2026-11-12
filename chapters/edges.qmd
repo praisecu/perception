@@ -1,0 +1,38 @@
+# Edges {#sec-edges}
+
+An edge is a place where image brightness changes sharply. Edges often mark object boundaries, so they are one of the first things a perception system looks for.
+
+## Image gradients
+
+The gradient of an image $I$ points in the direction of the fastest increase in brightness:
+
+$$
+\nabla I = \left( \frac{\partial I}{\partial x}, \frac{\partial I}{\partial y} \right),
+\qquad
+\lVert \nabla I \rVert = \sqrt{I_x^2 + I_y^2}.
+$$
+
+Large gradient magnitude means a likely edge. In practice the derivatives are estimated with small filters, such as the Sobel kernels, after smoothing to suppress noise.
+
+## The Canny detector
+
+The Canny detector turns gradients into thin, connected edges in four steps:
+
+1. Smooth the image with a Gaussian filter.
+2. Compute the gradient magnitude and direction.
+3. Keep only local maxima along the gradient direction (non-maximum suppression).
+4. Link edges with two thresholds: strong edges above the high threshold are kept, and weak edges between the thresholds are kept only if they connect to a strong edge.
+
+## Live demo
+
+Turn on your camera and move the sliders. A higher blur removes texture and noise. Raising the thresholds keeps only the strongest edges.
+
+{{< include ../demos/_canny.qmd >}}
+
+::: {.callout-tip}
+## Things to try
+- Set both thresholds low. Where do false edges appear?
+- Set blur to 0, then to 7. How does the edge map change on textured surfaces?
+:::
+
+As @sec-images showed, the camera image is just a grid of numbers. Canny is a short sequence of operations on that grid.

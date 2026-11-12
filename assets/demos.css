@@ -1,0 +1,67 @@
+/* Live OpenCV demos */
+
+.cv-demo {
+  margin: 1.5rem 0;
+  padding: 1rem;
+  border: 1px solid rgba(138, 109, 29, 0.35);
+  border-radius: 14px;
+}
+
+.cv-demo__views {
+  display: grid;
+  grid-template-columns: 1fr 1fr;
+  gap: 0.75rem;
+}
+
+.cv-demo__views figure {
+  margin: 0;
+}
+
+.cv-demo__views figcaption {
+  font-size: 0.85rem;
+  opacity: 0.75;
+  text-align: center;
+  margin-top: 0.25rem;
+}
+
+.cv-demo video,
+.cv-demo canvas {
+  display: block;
+  width: 100%;
+  aspect-ratio: 4 / 3;
+  object-fit: cover;
+  background: #000;
+  border-radius: 10px;
+}
+
+.cv-demo__controls {
+  display: flex;
+  flex-wrap: wrap;
+  align-items: center;
+  gap: 0.75rem 1.5rem;
+  margin-top: 0.9rem;
+}
+
+.cv-demo__controls label {
+  display: flex;
+  align-items: center;
+  gap: 0.5rem;
+  font-size: 0.9rem;
+}
+
+.cv-demo__controls output {
+  min-width: 2.5em;
+  font-variant-numeric: tabular-nums;
+}
+
+.cv-demo__status {
+  margin: 0.6rem 0 0;
+  font-size: 0.85rem;
+  opacity: 0.75;
+}
+
+@media (max-width: 600px) {
+  .cv-demo__views {
+    grid-template-columns: 1fr;
+  }
+}

@@ -1,0 +1,23 @@
+```{=html}
+<div class="cv-demo" id="canny-demo">
+  <div class="cv-demo__views">
+    <figure>
+      <video playsinline muted></video>
+      <figcaption>Camera</figcaption>
+    </figure>
+    <figure>
+      <canvas></canvas>
+      <figcaption>Canny edges</figcaption>
+    </figure>
+  </div>
+  <div class="cv-demo__controls">
+    <button type="button" class="btn btn-primary btn-sm">Start camera</button>
+    <label>Low threshold <input type="range" name="low" min="0" max="255" value="50"><output></output></label>
+    <label>High threshold <input type="range" name="high" min="0" max="255" value="150"><output></output></label>
+    <label>Blur <input type="range" name="blur" min="0" max="7" value="2"><output></output></label>
+  </div>
+  <p class="cv-demo__status">Press Start camera. Video is processed in your browser and never uploaded.</p>
+</div>
+<script src="../demos/opencv-loader.js"></script>
+<script src="../demos/canny.js"></script>
+```

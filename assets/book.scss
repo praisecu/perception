@@ -1,0 +1,11 @@
+/*-- scss:defaults --*/
+$primary: #8a6d1d;
+$link-color: #8a6d1d;
+$font-family-sans-serif: "Nunito", system-ui, -apple-system, "Segoe UI", sans-serif;
+
+/*-- scss:rules --*/
+@import url("https://fonts.googleapis.com/css2?family=Nunito:wght@400;700;800&display=swap");
+
+h1, h2, h3, .title {
+  font-weight: 800;
+}

@@ -1,0 +1,45 @@
+---
+# Code runs in the reader's browser (Pyodide), not at build time.
+engine: markdown
+pyodide:
+  packages:
+    - opencv-python
+    - matplotlib
+---
+
+# Images as Data {#sec-images}
+
+To a computer, an image is a grid of numbers. A grayscale image of height $H$ and width $W$ is a matrix $I \in \{0, \dots, 255\}^{H \times W}$, where each entry is the brightness of one pixel. A color image stacks three such grids, one per channel.
+
+## Try it
+
+The cell below builds a small image from scratch with OpenCV and shows each of its color channels. Change the shapes or colors and press **Run Code**. The first run takes a few seconds while OpenCV loads in your browser.
+
+```{pyodide}
+import cv2
+import numpy as np
+import matplotlib.pyplot as plt
+
+img = np.zeros((200, 300, 3), np.uint8)               # height, width, channels
+cv2.rectangle(img, (20, 30), (130, 170), (255, 60, 60), -1)
+cv2.circle(img, (210, 100), 60, (60, 200, 90), -1)
+
+channels = cv2.split(img)                              # R, G, B
+
+fig, axes = plt.subplots(1, 4, figsize=(12, 3))
+axes[0].imshow(img)
+axes[0].set_title("Image")
+for ax, channel, name in zip(axes[1:], channels, ["Red", "Green", "Blue"]):
+    ax.imshow(channel, cmap="gray", vmin=0, vmax=255)
+    ax.set_title(name)
+for ax in axes:
+    ax.axis("off")
+plt.show()
+
+print("Shape:", img.shape, " Type:", img.dtype)
+```
+
+::: {.callout-tip}
+## Exercise
+Convert the image to grayscale with `cv2.cvtColor(img, cv2.COLOR_RGB2GRAY)`. Which shape looks brighter, and why?
+:::

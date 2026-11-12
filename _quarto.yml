@@ -1,0 +1,37 @@
+project:
+  type: book
+  output-dir: _book
+  resources:
+    - CNAME
+    - logo.webp
+    - demos/*.js
+
+book:
+  title: "Perception"
+  subtitle: "How robots see, sense and understand the world"
+  author: "Chahat Deep Singh"
+  site-url: https://perception.praisecu.com
+  repo-url: https://github.com/praisecu/perception
+  repo-actions: [edit, issue]
+  favicon: logo.webp
+  search: true
+  page-footer:
+    center: "PRAISe Lab, University of Colorado Boulder · [praisecu.com](https://www.praisecu.com)"
+
+  # The table of contents. Add, remove or reorder chapters here.
+  chapters:
+    - index.qmd
+    - part: "Foundations"
+      chapters:
+        - chapters/images.qmd
+        - chapters/edges.qmd
+
+format:
+  live-html:
+    theme:
+      light: [cosmo, assets/book.scss]
+      dark: [darkly, assets/book.scss, assets/book-dark.scss]
+    css: assets/demos.css
+    number-sections: true
+    toc: true
+    code-copy: true
