@@ -26,9 +26,11 @@ book:
   chapters:
     - index.qmd
     - chapters/intro.qmd
-    - part: "Foundations"
+    - part: "Images and Cameras"
       chapters:
-        - chapters/images.qmd
+        - chapters/image-formation.qmd
+    - part: "Features"
+      chapters:
         - chapters/edges.qmd
 
 format:

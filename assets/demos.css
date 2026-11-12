@@ -505,3 +505,127 @@ html[data-theme="dark"] .versus__facts b {
   text-align: right;
 }
 
+
+/* Interactive figures (Chapter 2 and later) */
+
+.sim {
+  margin: 1.5rem 0;
+  padding: 1rem;
+  border: 1px solid rgba(207, 185, 125, 0.32);
+  border-radius: 16px;
+  background: rgba(207, 185, 125, 0.05);
+}
+
+.sim__svg,
+.sim__canvas,
+.sim__image {
+  display: block;
+  width: 100%;
+  height: auto;
+  border-radius: 12px;
+}
+
+.sim__svg {
+  background: rgba(207, 185, 125, 0.06);
+}
+
+.sim__canvas--chart {
+  max-width: 480px;
+  margin: 0 auto;
+  background: #000;
+}
+
+.sim__canvas--pixels {
+  image-rendering: pixelated;
+}
+
+.sim__controls {
+  display: flex;
+  flex-wrap: wrap;
+  align-items: center;
+  gap: 0.6rem 1.4rem;
+  margin-top: 0.9rem;
+}
+
+.sim__controls label,
+.sim__group {
+  display: flex;
+  flex-wrap: wrap;
+  align-items: center;
+  gap: 0.5rem;
+  font-size: 0.9rem;
+}
+
+.sim__controls input[type="range"] {
+  accent-color: #cfb97d;
+}
+
+.sim__controls output {
+  min-width: 4.5em;
+  font-variant-numeric: tabular-nums;
+  font-weight: 600;
+}
+
+.sim .btn.is-on {
+  background: #343607;
+  color: #f7df91;
+  border-color: #a79047;
+}
+
+.sim__readout {
+  margin: 0.7rem 0 0;
+  font-size: 0.9rem;
+}
+
+.sim__pair,
+.sim__trio {
+  display: grid;
+  grid-template-columns: repeat(2, 1fr);
+  gap: 0.8rem;
+}
+
+.sim__trio {
+  grid-template-columns: repeat(3, 1fr);
+}
+
+.sim__pair figure,
+.sim__trio figure {
+  margin: 0;
+}
+
+.sim__pair canvas,
+.sim__trio canvas {
+  display: block;
+  width: 100%;
+  border-radius: 12px;
+  background: #111;
+}
+
+.sim__trio canvas {
+  aspect-ratio: 4 / 3;
+}
+
+.sim__pair figcaption,
+.sim__trio figcaption {
+  margin-top: 0.3rem;
+  font-size: 0.85rem;
+  opacity: 0.7;
+  text-align: center;
+}
+
+/* Pinhole drawing */
+.sim__axis { stroke: currentColor; stroke-opacity: 0.25; stroke-dasharray: 4 5; }
+.sim__object { stroke: #2f8f5b; stroke-width: 5; stroke-linecap: round; }
+.sim__projected { stroke: #cfb97d; stroke-width: 5; stroke-linecap: round; }
+.sim__ray { stroke: #cfb97d; stroke-width: 1.6; stroke-opacity: 0.85; }
+.sim__ray--faint { stroke-opacity: 0.35; }
+.sim__plane { stroke: currentColor; stroke-opacity: 0.45; stroke-width: 2; }
+.sim__barrier { stroke: currentColor; stroke-width: 6; stroke-opacity: 0.75; }
+
+@media (max-width: 600px) {
+  .sim__trio {
+    grid-template-columns: 1fr;
+  }
+}
+.sim__label { fill: currentColor; font-family: 'Nunito Sans', sans-serif; font-size: 14px; font-weight: 700; text-anchor: middle; opacity: 0.75; }
+

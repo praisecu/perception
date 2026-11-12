@@ -35,4 +35,4 @@ Turn on your camera and move the sliders. A higher blur removes texture and nois
 - Set blur to 0, then to 7. How does the edge map change on textured surfaces?
 :::
 
-As @sec-images showed, the camera image is just a grid of numbers. Canny is a short sequence of operations on that grid.
+As @sec-image-formation showed, the camera image is just a grid of numbers. Canny is a short sequence of operations on that grid.

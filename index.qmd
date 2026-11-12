@@ -16,7 +16,7 @@ This book is written for students meeting computer vision and robot perception f
 ::: {.book-cards}
 [[Live demos]{.book-card__label}[Run OpenCV on your webcam]{.book-card__title}[Demos run in your browser. Video stays on your device and is never uploaded.]{.book-card__text}](chapters/edges.qmd){.book-card}
 
-[[Editable code]{.book-card__label}[Change it and press Run]{.book-card__title}[Real Python and OpenCV in the page, with nothing to install.]{.book-card__text}](chapters/images.qmd){.book-card}
+[[Editable code]{.book-card__label}[Change it and press Run]{.book-card__title}[Real Python and OpenCV in the page, with nothing to install.]{.book-card__text}](chapters/image-formation.qmd){.book-card}
 :::
 
 ## Chapters {.unnumbered}
@@ -24,7 +24,7 @@ This book is written for students meeting computer vision and robot perception f
 ::: {.book-cards}
 [[Chapter 1]{.book-card__label}[Introduction]{.book-card__title}[What perception is, why it is hard, and how the era of AI is changing it.]{.book-card__text}](chapters/intro.qmd){.book-card}
 
-[[Chapter 2]{.book-card__label}[Images as Data]{.book-card__title}[Pixels, channels and color, with editable OpenCV code.]{.book-card__text}](chapters/images.qmd){.book-card}
+[[Chapter 2]{.book-card__label}[Image Formation]{.book-card__title}[Pinholes, lenses, exposure and color sensors, with interactive figures.]{.book-card__text}](chapters/image-formation.qmd){.book-card}
 
 [[Chapter 3]{.book-card__label}[Edges]{.book-card__title}[Gradients and the Canny detector, live on your camera.]{.book-card__text}](chapters/edges.qmd){.book-card}
 :::
