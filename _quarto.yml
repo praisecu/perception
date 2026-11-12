@@ -24,6 +24,7 @@ book:
   # The table of contents. Add, remove or reorder chapters here.
   chapters:
     - index.qmd
+    - chapters/intro.qmd
     - part: "Foundations"
       chapters:
         - chapters/images.qmd

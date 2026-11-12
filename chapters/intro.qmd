@@ -1,0 +1,144 @@
+# Introduction {#sec-intro}
+
+A robot that cannot perceive cannot act with purpose. Before it can grasp an object, cross a room or fly through a gap, it has to work out what is around it, where things are and how they are moving. This book is about how robots do that: how they turn light and other signals into an understanding of the world that is good enough to act on.
+
+This chapter sets the stage. It answers four questions: what perception is, why it is hard, who it matters to, and why the subject is changing so quickly in the current era of artificial intelligence.
+
+## What is perception?
+
+Philosophers have debated the word for centuries. For engineers, a working definition is enough:
+
+::: {.callout-note appearance="simple"}
+**Perception** is the organization, identification and interpretation of sensory information in order to represent and understand the environment.
+:::
+
+Three parts of this definition matter for robots:
+
+- **Sensory information.** The raw input is a measurement, not a description. A camera records how much light reached each pixel. It does not record that there is a chair in the room.
+- **Representation.** Perception produces something the rest of the system can use: a depth map, a set of detected objects, a 3D model, an estimate of the robot's own motion.
+- **Understanding for a purpose.** A robot does not perceive for its own sake. It perceives so that it can decide and act.
+
+That last point separates *robot perception* from the wider field of *computer vision*. Computer vision asks what an image contains. Robot perception asks what the robot needs to know, right now, to do its job safely. The two share most of their tools, and this book draws on both.
+
+::: {#fig-loop}
+```{=html}
+<svg class="loop-figure" viewBox="0 0 640 250" role="img" aria-label="The perception and action loop: the world is measured by sensors, perception builds a representation, the robot decides and acts, and its motion changes the world it senses next.">
+  <defs>
+    <marker id="loop-arrow" viewBox="0 0 10 10" refX="9" refY="5" markerWidth="7" markerHeight="7" orient="auto-start-reverse">
+      <path d="M0,0 L10,5 L0,10 z" fill="#cfb97d"/>
+    </marker>
+  </defs>
+  <g fill="none" stroke="#cfb97d" stroke-width="2" marker-end="url(#loop-arrow)">
+    <path d="M150 55 H232"/>
+    <path d="M370 55 H452"/>
+    <path d="M535 80 V168"/>
+    <path d="M452 195 H370"/>
+    <path d="M232 195 H150"/>
+    <path d="M85 168 V80"/>
+  </g>
+  <g class="loop-figure__box">
+    <rect x="20" y="30" width="130" height="50" rx="12"/>
+    <rect x="235" y="30" width="135" height="50" rx="12"/>
+    <rect x="455" y="30" width="165" height="50" rx="12" class="loop-figure__accent"/>
+    <rect x="455" y="170" width="165" height="50" rx="12"/>
+    <rect x="235" y="170" width="135" height="50" rx="12"/>
+    <rect x="20" y="170" width="130" height="50" rx="12"/>
+  </g>
+  <g class="loop-figure__label" text-anchor="middle">
+    <text x="85" y="60">World</text>
+    <text x="302" y="60">Sensors</text>
+    <text x="537" y="60">Perception</text>
+    <text x="537" y="200">Decision</text>
+    <text x="302" y="200">Actuation</text>
+    <text x="85" y="200">Motion</text>
+  </g>
+  <g class="loop-figure__note" text-anchor="middle">
+    <text x="191" y="45">light</text>
+    <text x="411" y="45">signals</text>
+    <text x="580" y="128">representation</text>
+    <text x="411" y="186">commands</text>
+    <text x="191" y="186">forces</text>
+    <text x="60" y="128">changes</text>
+  </g>
+</svg>
+```
+
+Perception closes the loop between sensing and acting. What the robot does changes what it senses next.
+:::
+
+## Why is perception hard?
+
+People see effortlessly, so it is easy to underestimate the problem. A five-year-old recognizes a cup from any angle, in any light, half hidden behind a book. For decades this was far beyond any computer, even as computers became superhuman at chess and arithmetic. Hans Moravec observed this pattern in the 1980s: the abilities that feel easiest to us are often the hardest to build.
+
+Several reasons stand out.
+
+**A camera loses information.** An image is a two-dimensional projection of a three-dimensional world. Depth is discarded at the moment of capture, and many different scenes produce exactly the same image. A small object nearby and a large object far away can look identical. Recovering the world from images is therefore an *inverse problem* without a unique answer, and every perception system relies on assumptions, priors or extra measurements to resolve the ambiguity.
+
+**The same thing never looks the same twice.** Lighting, viewpoint, occlusion, motion blur, sensor noise, reflections and weather all change the measurement while the underlying object stays the same. A useful perception system must be invariant to the changes that do not matter and sensitive to the ones that do.
+
+**There is too much data and too little time.** Cameras produce millions of measurements per frame, many times per second. Biological vision copes by being highly selective: the eye samples finely only at the center of gaze, and the brain processes only a small fraction of what reaches the retina in detail. Robots face the same constraint, sharpened by limits on power, weight and onboard computation.
+
+**Mistakes have consequences.** An error in a photo-tagging application is an inconvenience. An error in a robot's perception can mean a collision. Robot perception must work in real time, report how confident it is, and fail safely.
+
+## Lessons from nature
+
+Nature offers proof that capable perception does not require enormous resources. A honeybee's brain is smaller than a sesame seed and contains about a million neurons, yet bees navigate kilometers to food sources, avoid obstacles in cluttered environments and return home reliably.
+
+Birds and insects solve the same problem, flying through a narrow gap, in very different ways. Many birds have sharp, fast eyes and enough neural processing to judge a gap at a glance and fly straight through at speed. An insect has neither. Its compound eyes have low resolution, and its brain is tiny. Instead it *moves to see*: it sweeps from side to side in front of the gap, uses the resulting image motion to tell near from far, and then steers toward the opening.
+
+The insect's strategy carries two ideas that run through this book:
+
+- **Perception can be active.** A robot can choose how to move, where to look and what to sense in order to make perception easier. This idea, formalized as *active vision* and *active perception* in the late 1980s, turns some hard problems into much simpler ones.
+- **Perception can be minimal.** A robot rarely needs a complete model of the world. It needs the information that matters for its task. Designing perception around the task, rather than around a general-purpose reconstruction, is what makes small, low-power robots possible.
+
+## A brief history
+
+Computer vision is younger than many engineering disciplines, but it has moved through several distinct eras.
+
+| Period | Milestone |
+|---|---|
+| 1960s | Images become digital. Larry Roberts recovers 3D block shapes from photographs (1963), and early projects aim to "solve vision" in a summer. |
+| 1969 | Azriel Rosenfeld publishes *Picture Processing by Computer*, the first textbook in the field, and later founds its first dedicated journal. |
+| 1980s | David Marr frames vision as a sequence of computational representations (*Vision*, 1982). Active vision and active perception emerge. |
+| 1990s to 2000s | Multiple-view geometry matures. Local features such as SIFT make matching and 3D reconstruction from photographs practical. |
+| 2012 | Deep convolutional networks win the ImageNet challenge by a wide margin, and learned representations begin to replace hand-designed ones. |
+| 2020s | Neural rendering (NeRF, Gaussian splatting) reconstructs photorealistic 3D scenes. Large foundation models learn general visual representations from vast data. |
+
+Each era kept what worked from the last. Geometry did not disappear when deep learning arrived; it became a source of structure, supervision and guarantees for learned systems.
+
+## Perception in the era of AI
+
+Perception is changing faster now than at any point in its history. Models trained on very large datasets can segment almost any object, estimate depth from a single image, describe a scene in language and answer questions about it. Vision-language models allow robots to take instructions in plain words. These advances have moved tasks that were research problems a few years ago into everyday tools.
+
+They have also sharpened the questions that matter for robots:
+
+- **Can it run on the robot?** The largest models need data-center hardware. Many robots, from drones to wearable devices, must perceive with a few watts and no network connection.
+- **Can we trust it?** A model that is right most of the time can still fail in ways that are hard to predict. Robots need calibrated confidence, physical consistency and a clear account of what the system does not know.
+- **Does it respect geometry and physics?** Cameras, lenses and motion obey precise laws. Methods that build these laws in tend to need less data, generalize better and fail more gracefully.
+
+The approach of this book follows from these questions. Learning-based methods are covered in depth, but always alongside the geometry and physics that explain *why* they work and *when* they fail. A practitioner who understands both can choose the right tool, combine them, and recognize when a result is too good to be true.
+
+## Who this book is for
+
+This book is written for advanced undergraduate and graduate students in robotics, mechanical, electrical and aerospace engineering and computer science, and for engineers who want a solid foundation in robot perception.
+
+No prior knowledge of computer vision is assumed. You will get the most from it with:
+
+- **Linear algebra:** vectors, matrices, eigenvalues and least squares.
+- **Calculus and probability:** derivatives, gradients, distributions and expectation.
+- **Programming:** working knowledge of Python. Familiarity with NumPy helps.
+
+## How to use this book
+
+Each chapter combines explanation, mathematics and practice:
+
+- **Live demos** run on your own webcam in the browser. Video is processed on your device and never uploaded.
+- **Editable code cells** contain real Python and OpenCV. Change the code and press **Run Code** to see the result, with nothing to install.
+- **Exercises** at the end of sections test understanding and suggest experiments.
+
+The chapters build on each other, starting from how images are formed and represented, moving through features and geometry, and arriving at 3D reconstruction, motion and learned models. Readers who already know the basics can use the sidebar to go straight to the topic they need.
+
+::: {.callout-tip}
+## Before you continue
+Look around the room you are in and pick one object. List everything you would need to know about it to pick it up with a robot arm: where it is, how big it is, what it is made of, how it might move. Then ask which of those a single photograph could tell you, and which it could not. Keep the list. Much of this book is about filling in the gaps.
+:::

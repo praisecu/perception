@@ -69,3 +69,37 @@
     grid-template-columns: 1fr;
   }
 }
+
+/* Figures drawn as inline SVG */
+
+.loop-figure {
+  display: block;
+  width: 100%;
+  max-width: 640px;
+  margin: 0.5rem auto;
+}
+
+.loop-figure__box rect {
+  fill: rgba(207, 185, 125, 0.08);
+  stroke: rgba(207, 185, 125, 0.55);
+  stroke-width: 1.5;
+}
+
+.loop-figure__box rect.loop-figure__accent {
+  fill: rgba(207, 185, 125, 0.22);
+  stroke: #cfb97d;
+}
+
+.loop-figure__label text {
+  fill: currentColor;
+  font-family: "Nunito Sans", sans-serif;
+  font-size: 17px;
+  font-weight: 700;
+}
+
+.loop-figure__note text {
+  fill: currentColor;
+  opacity: 0.65;
+  font-family: "Open Sans", sans-serif;
+  font-size: 12px;
+}
