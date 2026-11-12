@@ -9,7 +9,7 @@ project:
     - assets/praise/*
 
 book:
-  title: "Perception"
+  title: "Fundamentals of Robot Perception"
   subtitle: "How robots see, sense and understand the world"
   author: "Chahat Deep Singh"
   site-url: https://perception.praisecu.com

@@ -1,4 +1,4 @@
-# Perception
+# Fundamentals of Robot Perception
 
 An open online book on perception for robots, from the PRAISe Lab at CU Boulder. Published at https://perception.praisecu.com.
 
