@@ -1,0 +1,149 @@
+/* Chapter 7, Single-View Geometry: interactive figure styles */
+
+.sv-svg {
+  display: block;
+  width: 100%;
+  height: auto;
+  border-radius: 12px;
+  background: rgba(207, 185, 125, 0.06);
+  touch-action: none;
+  user-select: none;
+}
+
+.sv-pad { fill: rgba(128, 128, 128, 0.12); }
+
+.sv-axis { stroke: currentColor; stroke-opacity: 0.18; stroke-dasharray: 4 6; }
+
+.sv-handle {
+  stroke: #fff;
+  stroke-width: 3;
+  filter: drop-shadow(0 1px 3px rgba(0, 0, 0, 0.45));
+}
+.sv-handle:active { cursor: grabbing; }
+.sv-gold { fill: #cfb97d; }
+.sv-teal { fill: #3f9aa3; }
+.sv-rose { fill: #d0607a; }
+.sv-white { fill: #f4f2ea; stroke: #1d1e00; }
+
+.sv-line-gold, .sv-line-teal, .sv-line-rose, .sv-line-white {
+  stroke-width: 4;
+  stroke-linecap: round;
+}
+.sv-line-gold { stroke: #cfb97d; }
+.sv-line-teal { stroke: #3f9aa3; }
+.sv-line-rose { stroke: #d0607a; }
+.sv-line-white { stroke: #f4f2ea; }
+.sv-thin { stroke-width: 1.6; stroke-opacity: 0.8; stroke-dasharray: 10 6; }
+
+.sv-meet { fill: none; stroke: #d0607a; stroke-width: 3; }
+
+.sv-vp { fill: none; stroke-width: 4; }
+.sv-vp--gold { stroke: #cfb97d; }
+.sv-vp--teal { stroke: #3f9aa3; }
+.sv-vp--rose { stroke: #d0607a; }
+
+.sv-horizon {
+  stroke: #f7df91;
+  stroke-width: 3;
+  stroke-dasharray: 14 8;
+  filter: drop-shadow(0 0 2px rgba(0, 0, 0, 0.6));
+}
+.sv-hz-handle {
+  fill: #343607;
+  stroke: #f7df91;
+  stroke-width: 2;
+  cursor: ns-resize;
+}
+.sv-hz-label {
+  fill: #f7df91;
+  font: 800 26px "Nunito Sans", sans-serif;
+  text-anchor: middle;
+}
+
+.sv-truth { fill: #fff; stroke: #1d1e00; stroke-width: 2; }
+.sv-truth-line { stroke: #fff; stroke-opacity: 0.55; stroke-width: 1.5; }
+.sv-truth-text { opacity: 0.75; }
+
+.sv-k {
+  display: inline-block;
+  margin: 0 0.6rem 0.2rem 0;
+  font-variant-numeric: tabular-nums;
+  font-weight: 600;
+}
+.sv-k--gold { color: #b39a52; }
+.sv-k--teal { color: #3f9aa3; }
+
+/* Cross-ratio figure */
+.sv-world { stroke: currentColor; stroke-width: 3; stroke-opacity: 0.55; }
+.sv-imgline { stroke: #3f9aa3; stroke-width: 3; }
+.sv-ray { stroke: #cfb97d; stroke-width: 1.4; stroke-opacity: 0.7; }
+.sv-proj { fill: #3f9aa3; stroke: #fff; stroke-width: 2; }
+.sv-center { fill: currentColor; }
+.sv-label {
+  fill: currentColor;
+  font: 700 15px "Nunito Sans", sans-serif;
+  text-anchor: middle;
+}
+.sv-label--small { font-size: 12px; font-weight: 600; opacity: 0.8; }
+
+/* Forced perspective */
+.sv-forced {
+  display: grid;
+  grid-template-columns: 2fr 1fr;
+  gap: 0.8rem;
+  align-items: start;
+}
+.sv-forced img {
+  display: block;
+  width: 100%;
+  border-radius: 12px;
+  background: #a9abad;
+}
+.sv-map {
+  width: 100%;
+  height: auto;
+  border-radius: 12px;
+  background: rgba(207, 185, 125, 0.08);
+  transition: opacity 200ms ease;
+}
+.sv-map.is-hidden { opacity: 0.08; }
+.sv-drone { fill: rgba(207, 185, 125, 0.5); stroke: #b39a52; stroke-width: 2; }
+.sv-cam { fill: #d0607a; }
+.sv-cam--past { opacity: 0.35; }
+
+/* Shape from shading */
+.sv-shading {
+  display: block;
+  width: 100%;
+  max-width: 480px;
+  margin: 0 auto;
+  border-radius: 12px;
+  transition: transform 450ms ease;
+}
+.sv-shading.is-flipped { transform: rotate(180deg); }
+
+/* Depth explorer */
+.sv-depth {
+  display: block;
+  width: 100%;
+  border-radius: 12px;
+  cursor: crosshair;
+  touch-action: none;
+}
+
+@media (max-width: 700px) {
+  .sv-forced { grid-template-columns: 1fr; }
+  .sv-handle { r: 16; }
+}
+
+/* The room figures use a 1280-unit coordinate system, so their marks are drawn larger */
+.sv-big .sv-handle { r: 24px; stroke-width: 5; }
+.sv-big .sv-line-gold, .sv-big .sv-line-teal, .sv-big .sv-line-rose, .sv-big .sv-line-white { stroke-width: 8; }
+.sv-big .sv-thin { stroke-width: 3; }
+.sv-big .sv-vp { r: 30px; stroke-width: 7; }
+.sv-big .sv-horizon { stroke-width: 5; }
+.sv-big .sv-truth { r: 11px; stroke-width: 3; }
+
+@media (max-width: 700px) {
+  .sv-big .sv-handle { r: 40px; }
+}

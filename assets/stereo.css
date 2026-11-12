@@ -1,0 +1,79 @@
+/* Chapter 10: Stereo and Two-View Geometry */
+
+.st-pair {
+  display: grid;
+  grid-template-columns: 1fr 1fr;
+  gap: 0.6rem;
+}
+
+.st-pair figure {
+  margin: 0;
+}
+
+.st-pair canvas,
+.st-wide,
+.st-chart,
+.st-3d {
+  display: block;
+  width: 100%;
+  height: auto;
+  border-radius: 12px;
+  background: #111;
+}
+
+.st-pair canvas {
+  touch-action: none;
+  cursor: crosshair;
+}
+
+.st-pair figcaption {
+  margin-top: 0.3rem;
+  font-size: 0.85rem;
+  opacity: 0.7;
+  text-align: center;
+}
+
+.st-chart {
+  margin-top: 0.7rem;
+  background: transparent;
+  border: 1px solid rgba(207, 185, 125, 0.25);
+}
+
+.st-3d {
+  touch-action: none;
+  cursor: grab;
+  background: rgba(207, 185, 125, 0.06);
+}
+
+.st-matrix {
+  margin: 0.6rem 0 0;
+  padding: 0.6rem 0.8rem;
+  overflow-x: auto;
+  border-radius: 10px;
+  background: rgba(207, 185, 125, 0.08);
+  font-size: 0.8rem;
+  line-height: 1.5;
+  white-space: pre;
+}
+
+/* Top-down disparity drawing */
+.st-plane { stroke: currentColor; stroke-opacity: 0.4; stroke-width: 2; stroke-dasharray: 6 5; }
+.st-cam { fill: currentColor; fill-opacity: 0.8; }
+.st-ray { stroke: #cfb97d; stroke-width: 2; }
+.st-hit { fill: #ff6b6b; }
+.st-point { fill: #2f8f5b; }
+.st-base { stroke: currentColor; stroke-width: 2; stroke-opacity: 0.6; }
+.st-label { fill: currentColor; font-family: "Nunito Sans", sans-serif; font-size: 14px; font-weight: 700; text-anchor: middle; }
+.st-label--left { text-anchor: start; }
+.st-small { fill: currentColor; opacity: 0.65; font-size: 12px; text-anchor: middle; }
+.st-plane + .st-small { text-anchor: start; }
+
+@media (max-width: 600px) {
+  .st-pair {
+    grid-template-columns: 1fr;
+  }
+}
+
+.st-plot {
+  background: rgba(207, 185, 125, 0.06);
+}

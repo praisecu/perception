@@ -1,0 +1,410 @@
+---
+# Editable code runs in the reader's browser (Pyodide), not at build time.
+engine: markdown
+pyodide:
+  packages:
+    - opencv-python
+    - matplotlib
+    - numpy
+---
+
+# Stereo and Two-View Geometry {#sec-stereo}
+
+```{=html}
+<link rel="stylesheet" href="../assets/stereo.css">
+```
+
+A single image cannot tell a large object far away from a small object nearby. We met this ambiguity in @sec-image-formation, where perspective projection divides by depth, and again in @sec-single-view, where a single image yields metric measurements only with extra knowledge about the scene. Nature's answer, and the answer of most robots, is to look from a second viewpoint. Two views add constraints that a single view cannot provide, and with them, depth becomes measurable.
+
+This chapter starts with the simplest case, two parallel cameras, and builds up to general two-view geometry: the epipolar constraint, the essential and fundamental matrices, and triangulation. Along the way, you will match pixels between real image pairs, compute a disparity map in your browser, and watch the epipolar geometry move in 3D.
+
+::: {.callout-note appearance="simple"}
+**In this chapter.** Stereopsis and disparity · depth from disparity and its limits · finding correspondences · block matching · epipolar geometry · the essential and fundamental matrices · the eight-point algorithm · triangulation · rectification · stereo on robots.
+:::
+
+## Two eyes are better than one
+
+Hold a finger in front of your face and close each eye in turn. The finger jumps sideways against the background, while distant objects barely move. Your brain uses this difference, called **binocular disparity**, to perceive depth. The ability is called **stereopsis**, and it is strongest for objects within a few meters.
+
+Stereoscopic displays exploit the same effect. If each eye is shown its own view of a scene, the brain fuses them into a single image with depth. Red-cyan *anaglyph* glasses filter the colors so each eye sees one view. Polarized cinema glasses use differently polarized light for each eye, and active shutter glasses block each eye in turn, synchronized with a fast display.
+
+The images below are a real stereo pair: two renders of the drone scene from @sec-image-formation, taken by cameras 8 cm apart, roughly the distance between human eyes. Try each way of viewing them.
+
+```{=html}
+<div class="sim" id="stereo-viewer">
+  <canvas class="st-wide"></canvas>
+  <div class="sim__controls">
+    <button type="button" class="btn btn-gold-outline btn-sm" data-mode="wiggle">Wiggle</button>
+    <button type="button" class="btn btn-gold-outline btn-sm" data-mode="anaglyph">Red-cyan anaglyph</button>
+    <button type="button" class="btn btn-gold-outline btn-sm" data-mode="side">Side by side</button>
+    <button type="button" class="btn btn-gold-outline btn-sm" data-mode="cross">Cross-eyed</button>
+  </div>
+  <p class="sim__readout"></p>
+</div>
+```
+
+In the wiggle view, notice that the nearest drone jumps by tens of pixels while the brick wall hardly moves. That pattern is the whole story of stereo: **nearby points shift more than distant ones**, and measuring the shift tells us the distance.
+
+## Depth from disparity
+
+Consider the simplest arrangement: two identical cameras whose image planes are parallel to each other and to the line joining their centers, the **baseline** $B$. A point $X$ at depth $Z$ projects to horizontal coordinate $x_L$ in the left image and $x_R$ in the right image, but to the same row in both. By similar triangles (@sec-image-formation),
+
+$$
+x_L = f\,\frac{X}{Z}, \qquad x_R = f\,\frac{X - B}{Z},
+$$
+
+so the **disparity** is
+
+$$
+d = x_L - x_R = \frac{f\,B}{Z}, \qquad\text{or}\qquad Z = \frac{f\,B}{d}.
+$$
+
+Disparity is inversely proportional to depth. Three consequences follow immediately:
+
+- **Near points have large disparity**, distant points small disparity, and points at infinity have zero disparity.
+- **Disparity alone is not depth.** Turning disparity into meters needs the focal length $f$ in pixels and the baseline $B$, which come from calibration (@sec-camera-models).
+- **Depth resolution falls quickly with distance.** Differentiating $Z = fB/d$ gives $\Delta Z \approx \dfrac{Z^2}{f B}\,\Delta d$. A fixed matching error of a fraction of a pixel costs little at 1 m and a great deal at 10 m.
+
+```{=html}
+<div class="sim" id="disparity-sim">
+  <svg class="sim__svg" viewBox="0 0 720 370" role="img" aria-label="Top view of two parallel cameras, a point in front of them, and the rays from the point to each camera"></svg>
+  <div class="sim__controls">
+    <label>Depth Z <input type="range" name="Z" min="0.4" max="6" step="0.05" value="1.5"><output></output></label>
+    <label>Sideways X <input type="range" name="X" min="-0.4" max="0.4" step="0.01" value="0.05"><output></output></label>
+    <label>Baseline B <input type="range" name="B" min="0.04" max="0.3" step="0.01" value="0.08"><output></output></label>
+  </div>
+  <p class="sim__readout"></p>
+  <canvas class="st-chart"></canvas>
+</div>
+```
+
+The lower plot shows the depth error for a half-pixel disparity error as a function of distance. A wider baseline flattens the curve, which is why long-range stereo systems, such as those on autonomous cars, use cameras tens of centimeters apart. The price is that the two views look less alike, so matching becomes harder, and nearby objects may fall outside one of the views. Some research systems, such as the variable-baseline *MorphEyes* camera, adjust the baseline to suit the scene.
+
+::: {.callout-tip}
+## Exercise
+A drone's stereo camera has $f = 400$ px and $B = 6$ cm, and its matcher is accurate to about 0.25 px. Estimate the depth uncertainty at 2 m and at 8 m. At what distance does the uncertainty reach 1 m?
+:::
+
+## Finding correspondences
+
+Everything above assumed we know which pixel in the right image matches each pixel in the left. Finding these **correspondences** is the hard part of stereo. For parallel cameras, the match of a left pixel must lie on the same row of the right image, so the search is one-dimensional. The standard recipe is:
+
+1. For each pixel in the left image, take a small window around it.
+2. Slide the window along the same row of the right image, over a range of disparities.
+3. Score each position with a **matching cost** and keep the best.
+4. Convert the winning disparity to depth with $Z = fB/d$.
+
+Common matching costs compare the two windows $W_L$ and $W_R$ pixel by pixel:
+
+$$
+\text{SAD} = \sum |W_L - W_R|, \qquad
+\text{SSD} = \sum (W_L - W_R)^2, \qquad
+\text{NCC} = \frac{\sum (W_L - \bar W_L)(W_R - \bar W_R)}{\sqrt{\sum (W_L - \bar W_L)^2 \sum (W_R - \bar W_R)^2}}.
+$$
+
+SAD and SSD are fast but sensitive to brightness differences between the cameras. **Normalized cross-correlation** (NCC) subtracts the mean and divides by the contrast, so it tolerates exposure changes at a higher computational cost.
+
+Click or drag on the left image below. The gold box is the window; the right image shows the row being searched, the same column as a dashed white line (zero disparity), and the best match in red. The plot is the cost along the row, with the ground-truth disparity in blue.
+
+```{=html}
+<div class="sim" id="match-sim">
+  <div class="st-pair">
+    <figure><canvas></canvas><figcaption>Left image: click to choose a pixel</figcaption></figure>
+    <figure><canvas></canvas><figcaption>Right image: the same row is searched</figcaption></figure>
+  </div>
+  <canvas class="st-chart"></canvas>
+  <div class="sim__controls">
+    <label>Window <input type="range" name="win" min="1" max="15" step="1" value="4"><output></output></label>
+    <span class="sim__group">Cost
+      <button type="button" class="btn btn-gold-outline btn-sm is-on" data-cost="SAD">SAD</button>
+      <button type="button" class="btn btn-gold-outline btn-sm" data-cost="SSD">SSD</button>
+      <button type="button" class="btn btn-gold-outline btn-sm" data-cost="NCC">NCC</button>
+    </span>
+    <span class="sim__group">Try
+      <button type="button" class="btn btn-gold-outline btn-sm" data-spot="236,226">Near drone</button>
+      <button type="button" class="btn btn-gold-outline btn-sm" data-spot="300,330">Floor</button>
+      <button type="button" class="btn btn-gold-outline btn-sm" data-spot="420,90">Brick wall</button>
+    </span>
+  </div>
+  <p class="sim__readout"></p>
+</div>
+```
+
+Things to notice:
+
+- **On textured regions**, such as the drones, the cost curve has one sharp minimum and the match is reliable.
+- **On repetitive texture**, such as the brick wall, the curve has many similar minima, one per brick. A small window cannot tell them apart.
+- **On smooth regions**, such as parts of the floor, the curve is flat and the minimum is decided by noise.
+- **The window size is a trade-off.** Larger windows contain more texture and match more reliably, but they blur depth edges, because a window straddling a near and a far surface has no single correct disparity.
+
+Two further problems have no fix through window size. **Occlusions**: some points are visible in one image and hidden in the other, so they have no correct match at all. **Non-Lambertian surfaces**: reflections and specular highlights move with the viewpoint and so look different in each image.
+
+## Block matching
+
+Running the search at every pixel produces a **disparity map**, a dense image of disparities that converts directly to depth. This is **block matching**, and it is simple enough to run in your browser. The left map below is computed live on your device from the stereo pair; the right map is the ground truth from Blender.
+
+```{=html}
+<div class="sim" id="bm-sim">
+  <div class="st-pair">
+    <figure><canvas></canvas><figcaption>Block matching (computed in your browser)</figcaption></figure>
+    <figure><canvas></canvas><figcaption>Ground truth from the renderer</figcaption></figure>
+  </div>
+  <div class="sim__controls">
+    <label>Block size <input type="range" name="block" min="1" max="10" step="1" value="4"><output></output></label>
+    <label>Largest disparity <input type="range" name="maxd" min="16" max="66" step="2" value="66"><output></output></label>
+    <button type="button" class="btn btn-gold-outline btn-sm" data-action="unique">Uniqueness check: off</button>
+    <button type="button" class="btn btn-gold-outline btn-sm" data-action="lr">Left-right check: off</button>
+  </div>
+  <p class="sim__readout"></p>
+</div>
+```
+
+Warmer colors mean larger disparity, so nearer surfaces. Try these:
+
+- **Shrink the block size.** The map becomes noisy, especially on the floor and wall.
+- **Grow it.** The noise fades, but the drones swell and lose their thin arms.
+- **Lower the largest disparity.** The nearest drone and the floor in front of the camera fail first, because their true disparity no longer fits in the search range.
+- **Look at the brick wall.** Parts of it come out red, as if very close. The bricks repeat, so a window on one brick matches a neighboring brick almost as well as the right one: the repetitive-texture failure from the previous figure, now across a whole region.
+- **Turn on the uniqueness check.** It rejects pixels whose second-best match scores within 15% of the best, the same idea as the `uniquenessRatio` setting in OpenCV's block matcher. Many of the false wall matches turn gray.
+- **Turn on the left-right check.** It matches in both directions and keeps only pixels whose two answers agree, which removes occluded pixels beside the drones. Each check makes the map less complete but more trustworthy, a trade robots often prefer.
+
+Modern stereo systems improve on block matching in two main ways. **Semi-global matching** (SGM) adds a smoothness cost that encourages neighboring pixels to have similar disparities except at strong image edges. **Learned stereo** networks compare deep features rather than raw pixels and reason about the whole image at once, which handles texture-poor and reflective surfaces far better.
+
+### Sparse and dense depth
+
+Block matching gives a **dense** disparity map, with an estimate at nearly every pixel. An alternative is to match only distinctive **features** (@sec-features), such as corners. Feature matches are robust to clutter, occlusion and large changes in viewpoint, but they give only a **sparse** set of depths. Filling in the gaps, called **depth completion**, is an active research topic, often tackled with learned models.
+
+## Epipolar geometry
+
+Parallel cameras are a special case. In general, the second camera is rotated and translated relative to the first, and the matching pixel no longer lies on the same row. It does, however, still lie on a line. This is the central fact of two-view geometry.
+
+Take a point $X$ seen by two cameras with centers $C$ and $C'$. The three points $C$, $C'$ and $X$ define a plane, the **epipolar plane**. Every element of the problem lives in this plane:
+
+- The ray from $C$ through the left pixel $x$ lies in the plane.
+- The plane cuts the second image in a line, the **epipolar line** $l'$. The match $x'$ must lie on it.
+- The baseline $CC'$ pierces each image at a point called the **epipole** ($e$ and $e'$). Every epipolar line passes through the epipole.
+
+Move the point along its ray below. From the first camera it never moves, but in the second camera it slides along the epipolar line. Drag the figure to view it from other angles.
+
+```{=html}
+<div class="sim" id="plane-sim">
+  <canvas class="st-3d"></canvas>
+  <div class="sim__controls">
+    <label>Distance along the ray <input type="range" name="s" min="0.9" max="4" step="0.02" value="2.2"><output></output></label>
+    <label>Ray height <input type="range" name="h" min="-0.3" max="0.3" step="0.01" value="0.12"><output></output></label>
+  </div>
+  <p class="sim__readout"></p>
+</div>
+```
+
+This **epipolar constraint** reduces the search for a match from the whole image to a single line, whatever the relative pose of the cameras. Now try it on real images: the right image below was rendered from a camera moved 45 cm to the side and turned toward the scene. Click on the left image to draw the corresponding epipolar lines, computed from the known cameras. The large dots are the true matches, found from the renderer's depth.
+
+```{=html}
+<div class="sim" id="epi-sim">
+  <div class="st-pair">
+    <figure><canvas></canvas><figcaption>First view: click a point</figcaption></figure>
+    <figure><canvas></canvas><figcaption>Second view: its epipolar line</figcaption></figure>
+  </div>
+  <div class="sim__controls">
+    <button type="button" class="btn btn-gold-outline btn-sm" data-action="demo">Show five lines</button>
+    <button type="button" class="btn btn-gold-outline btn-sm" data-action="clear">Clear</button>
+  </div>
+  <p class="sim__readout"></p>
+  <pre class="st-matrix"></pre>
+</div>
+```
+
+### The essential matrix
+
+The epipolar constraint has a compact algebraic form. Express the two cameras in calibrated (normalized) coordinates, $\hat{x} = K^{-1} x$, and let the second camera be related to the first by rotation $R$ and translation $t$, so that a point $X_1$ in the first camera frame is $X_2 = R X_1 + t$ in the second. The vectors $X_2$, $t$ and $R X_1$ all lie in the epipolar plane, so
+
+$$
+X_2^\top \left( t \times R X_1 \right) = 0 .
+$$
+
+Writing the cross product as a matrix, $[t]_\times$, gives the **essential matrix**
+
+$$
+E = [t]_\times R, \qquad \hat{x}'^\top E\, \hat{x} = 0 .
+$$
+
+$E$ depends only on the relative pose of the cameras. It has five degrees of freedom (three for rotation, two for the direction of translation), because the overall scale of $t$ cannot be recovered from images alone. This is the scale ambiguity from @sec-intro once more: two views fix the shape of the scene, but not its size, unless the baseline is known.
+
+### The fundamental matrix
+
+In pixel coordinates the same constraint becomes
+
+$$
+x'^\top F\, x = 0, \qquad F = K'^{-\top} E\, K^{-1},
+$$
+
+where $F$ is the **fundamental matrix**. It is a $3 \times 3$ matrix of rank 2 with seven degrees of freedom, and it encodes everything about the two-view geometry that can be measured from pixel correspondences alone, without calibration. Given a left pixel $x$, its epipolar line in the right image is simply $l' = F x$, which is exactly how the lines in the figure above are drawn. The epipoles are the null vectors of $F$: $F e = 0$ and $F^\top e' = 0$.
+
+### Estimating F: the eight-point algorithm
+
+Each correspondence $x \leftrightarrow x'$ gives one linear equation in the nine entries of $F$:
+
+$$
+x' x f_{11} + x' y f_{12} + x' f_{13} + y' x f_{21} + y' y f_{22} + y' f_{23} + x f_{31} + y f_{32} + f_{33} = 0 .
+$$
+
+With eight or more correspondences, stacking these equations gives a system $A \mathbf{f} = 0$, solved by the singular vector of $A$ with the smallest singular value, just as for the homography in @sec-transformations. Two details make it work in practice:
+
+- **Normalization.** Pixel coordinates are in the hundreds, so the entries of $A$ differ by many orders of magnitude, and the solution is numerically fragile. Hartley's fix is to translate and scale each image's points so their centroid is at the origin and their average distance from it is $\sqrt{2}$, solve, then undo the scaling.
+- **Rank 2.** Noise makes the estimate full rank. Setting its smallest singular value to zero restores the rank-2 structure, so all epipolar lines meet at a single epipole.
+
+Real correspondences from feature matching contain outliers, so $F$ is estimated inside **RANSAC** (@sec-transformations), using random samples of eight (or, with more algebra, seven) matches.
+
+```{pyodide}
+import numpy as np
+import cv2
+
+rng = np.random.default_rng(1)
+K = np.array([[622.0, 0, 320], [0, 622, 180], [0, 0, 1]])
+
+# Second camera: 50 cm to the right and turned 10 degrees toward the scene
+a = np.deg2rad(-10)
+R = np.array([[np.cos(a), 0, np.sin(a)], [0, 1, 0], [-np.sin(a), 0, np.cos(a)]])
+t = np.array([-0.5, 0.0, 0.05])
+
+X = np.c_[rng.uniform(-1, 1, 60), rng.uniform(-0.5, 0.5, 60), rng.uniform(2, 6, 60)]
+
+def project(R, t, X):
+    x = (K @ (R @ X.T + t[:, None])).T
+    return x[:, :2] / x[:, 2:]
+
+noise = 0.5  # pixels; try 0.1 or 2
+x1 = project(np.eye(3), np.zeros(3), X) + rng.normal(0, noise, (60, 2))
+x2 = project(R, t, X) + rng.normal(0, noise, (60, 2))
+
+def eight_point(x1, x2, normalize=True):
+    def T_of(x):
+        c = x.mean(0)
+        s = np.sqrt(2) / np.mean(np.linalg.norm(x - c, axis=1))
+        return np.array([[s, 0, -s * c[0]], [0, s, -s * c[1]], [0, 0, 1]])
+    T1 = T_of(x1) if normalize else np.eye(3)
+    T2 = T_of(x2) if normalize else np.eye(3)
+    h1 = (T1 @ np.c_[x1, np.ones(len(x1))].T).T
+    h2 = (T2 @ np.c_[x2, np.ones(len(x2))].T).T
+    A = np.stack([np.kron(q, p) for p, q in zip(h1, h2)])   # one row per match: x2^T F x1 = 0
+    F = np.linalg.svd(A)[2][-1].reshape(3, 3)
+    U, S, Vt = np.linalg.svd(F)
+    F = U @ np.diag([S[0], S[1], 0]) @ Vt                     # force rank 2
+    F = T2.T @ F @ T1                                         # undo the normalization
+    return F / np.linalg.norm(F)
+
+def epipolar_error(F, x1, x2):
+    h1 = np.c_[x1, np.ones(len(x1))]
+    h2 = np.c_[x2, np.ones(len(x2))]
+    l = (F @ h1.T).T                                          # epipolar lines in image 2
+    return np.mean(np.abs(np.sum(l * h2, 1)) / np.hypot(l[:, 0], l[:, 1]))
+
+for norm in (False, True):
+    F = eight_point(x1, x2, norm)
+    print(f"normalized={norm!s:5}  mean distance to epipolar line: {epipolar_error(F, x1, x2):.3f} px")
+
+# Recover the relative pose from E = K^T F K
+F = eight_point(x1, x2, True)
+E = K.T @ F @ K
+_, R_est, t_est, _ = cv2.recoverPose(E, x1, x2, K)
+angle = np.degrees(np.arccos(np.clip((np.trace(R_est @ R.T) - 1) / 2, -1, 1)))
+print("rotation error:", round(angle, 3), "degrees")
+print("translation direction:", np.round(t_est.ravel(), 3), " true:", np.round(t / np.linalg.norm(t), 3))
+```
+
+### Recovering pose and triangulating
+
+Given $E$, the relative rotation and the direction of translation can be recovered from its singular value decomposition. The decomposition yields four candidate poses; only one places the reconstructed points in front of both cameras, so a quick check with one triangulated point selects it. This is what `cv2.recoverPose` does in the cell above.
+
+With both cameras known, each correspondence defines two rays, and the 3D point is where they meet. Because of noise the rays almost never intersect exactly, so **triangulation** finds the point that best fits both, for example by a small linear least-squares problem or by minimizing reprojection error. The geometry of triangulation explains the depth error we saw earlier: when the rays are nearly parallel, a tiny angular error slides the intersection a long way along them.
+
+```{=html}
+<div class="sim" id="tri-sim">
+  <canvas class="st-wide st-plot"></canvas>
+  <div class="sim__controls">
+    <label>Baseline <input type="range" name="B" min="0.04" max="0.6" step="0.01" value="0.12"><output></output></label>
+    <label>Distance <input type="range" name="Z" min="0.5" max="8" step="0.1" value="3"><output></output></label>
+    <label>Pixel noise <input type="range" name="noise" min="0" max="3" step="0.1" value="0.8"><output></output></label>
+    <button type="button" class="btn btn-gold-outline btn-sm" data-action="again">Sample again</button>
+  </div>
+  <p class="sim__readout"></p>
+</div>
+```
+
+The cloud of red estimates is stretched along the viewing direction. Increase the distance and it stretches further; increase the baseline and it shrinks. Uncertainty in stereo depth is never round.
+
+## Rectification
+
+Searching along arbitrary epipolar lines is awkward and slow. **Rectification** warps both images with homographies (@sec-transformations) so that their epipolar lines become horizontal and aligned row by row, as if the images came from parallel cameras. After rectification, the fast row-by-row matching of the previous sections applies to any calibrated camera pair. Stereo libraries such as OpenCV (`cv2.stereoRectify`) compute these homographies from the calibration, and most stereo cameras deliver rectified images directly.
+
+### Try it in code: stereo matching
+
+The cell below builds a **random-dot stereogram**: two images of pure noise in which a square and a disc float in front of a background. Neither image alone shows any shape, yet stereo matching recovers them. This classic experiment, due to Béla Julesz in 1960, showed that the human visual system can perceive depth from disparity alone, without recognizing any objects first.
+
+```{pyodide}
+import numpy as np
+import cv2
+import matplotlib.pyplot as plt
+
+rng = np.random.default_rng(0)
+H, W = 240, 320
+
+# A random-dot scene: background at disparity 4, a square at 16, a disc at 28
+D = np.full((H, W), 4, np.int32)
+D[60:180, 60:160] = 16
+yy, xx = np.mgrid[:H, :W]
+D[(xx - 230) ** 2 + (yy - 120) ** 2 < 50 ** 2] = 28
+
+left = (rng.random((H, W)) > 0.5).astype(np.uint8) * 255
+right = (rng.random((H, W)) > 0.5).astype(np.uint8) * 255   # fills newly visible areas
+for d in sorted(np.unique(D)):                                 # far first, near overwrites
+    ys, xs = np.nonzero(D == d)
+    keep = xs - d >= 0
+    right[ys[keep], xs[keep] - d] = left[ys[keep], xs[keep]]
+
+# Try other block sizes (odd numbers from 5 to 41)
+stereo = cv2.StereoBM_create(numDisparities=48, blockSize=15)
+disp = stereo.compute(left, right).astype(np.float32) / 16     # fixed point to pixels
+
+valid = disp > 0
+print(f"{100 * valid.mean():.0f}% of pixels matched, "
+      f"{100 * (np.abs(disp - D) <= 1)[valid].mean():.0f}% of those within 1 px of the truth")
+
+fig, ax = plt.subplots(1, 4, figsize=(14, 3))
+ax[0].imshow(left, cmap="gray"); ax[0].set_title("Left")
+ax[1].imshow(right, cmap="gray"); ax[1].set_title("Right")
+ax[2].imshow(D, cmap="turbo", vmin=0, vmax=32); ax[2].set_title("True disparity")
+ax[3].imshow(np.where(valid, disp, np.nan), cmap="turbo", vmin=0, vmax=32); ax[3].set_title("StereoBM")
+for a in ax:
+    a.axis("off")
+plt.show()
+```
+
+::: {.callout-tip}
+## Exercise
+Where does StereoBM fail in the random-dot scene, and why? Hint: look at the left edge of each shape, and think about which background pixels the right camera can see.
+:::
+
+## Stereo on robots
+
+Stereo cameras are among the most widely used depth sensors in robotics, from planetary rovers to drones and warehouse robots. A few practical points shape their design:
+
+- **Choosing the baseline.** The baseline sets the working range. Small drones use baselines of a few centimeters and see well up to a few meters; cars use 20 to 50 cm to see tens of meters.
+- **Calibration and synchronization.** Stereo depends on knowing $K$, $R$ and $t$ precisely, and on capturing both images at the same instant. A few pixels of calibration error or a few milliseconds of timing error on a moving robot can ruin the depth.
+- **Active stereo.** Many depth cameras add a projector that paints an invisible infrared dot pattern onto the scene. The pattern gives texture to blank walls and floors, curing the textureless failure case. Structured-light sensors go further and replace one camera with a known projected pattern.
+- **Learned stereo.** Deep networks now produce state-of-the-art disparity maps and can run in real time on embedded hardware, though classical methods remain popular where predictability, power and certification matter.
+
+## Summary
+
+- Two views resolve the scale and depth ambiguity of a single image. For parallel cameras, depth follows from disparity: $Z = fB/d$.
+- Depth error grows with the square of distance and shrinks with baseline and focal length.
+- Stereo matching compares windows along epipolar lines with costs such as SAD, SSD and NCC. Window size trades reliability against detail; occlusions, repetitive texture and textureless regions cause most failures.
+- For any two cameras, a point's match lies on its epipolar line. The essential matrix $E = [t]_\times R$ captures this in calibrated coordinates and the fundamental matrix $F = K'^{-\top} E K^{-1}$ in pixels.
+- The normalized eight-point algorithm, inside RANSAC, estimates $F$ from correspondences. $E$ yields the relative pose, and triangulation yields 3D points.
+- Rectification turns any calibrated pair into the simple parallel case.
+
+Two views give us relative pose and depth for one pair of images. A robot moving through the world collects many views over time. Joining them into a single consistent map of the scene and the camera's path is **structure from motion**, the subject of the next part of the book.
+
+```{=html}
+<script src="../demos/stereo.js"></script>
+```

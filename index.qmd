@@ -31,6 +31,16 @@ This book is written for students meeting computer vision and robot perception f
 [[Chapter 4]{.book-card__label}[Projections and Transformations]{.book-card__title}[Homogeneous coordinates, homographies, RANSAC and panoramas.]{.book-card__text}](chapters/transformations.qmd){.book-card}
 
 [[Chapter 5]{.book-card__label}[Camera Models and Calibration]{.book-card__title}[Intrinsics, extrinsics, rotations, lens distortion and calibration.]{.book-card__text}](chapters/camera-models.qmd){.book-card}
+
+[[Chapter 6]{.book-card__label}[Curves and Rendering]{.book-card__title}[Splines, surfaces and how computers draw a 3D world.]{.book-card__text}](chapters/curves-rendering.qmd){.book-card}
+
+[[Chapter 7]{.book-card__label}[Single-View Geometry]{.book-card__title}[Vanishing points, measuring from one image and its limits.]{.book-card__text}](chapters/single-view.qmd){.book-card}
+
+[[Chapter 8]{.book-card__label}[Computational Imaging]{.book-card__title}[Cameras designed together with algorithms.]{.book-card__text}](chapters/computational-imaging.qmd){.book-card}
+
+[[Chapter 9]{.book-card__label}[Learning Depth]{.book-card__title}[Coded apertures and neural networks that estimate depth.]{.book-card__text}](chapters/learned-depth.qmd){.book-card}
+
+[[Chapter 10]{.book-card__label}[Stereo and Two-View Geometry]{.book-card__title}[Epipolar geometry, disparity and depth from two cameras.]{.book-card__text}](chapters/stereo.qmd){.book-card}
 :::
 
 ::: {.callout-note}

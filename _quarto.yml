@@ -36,6 +36,15 @@ book:
       chapters:
         - chapters/transformations.qmd
         - chapters/camera-models.qmd
+        - chapters/curves-rendering.qmd
+        - chapters/single-view.qmd
+    - part: "Computational Imaging"
+      chapters:
+        - chapters/computational-imaging.qmd
+        - chapters/learned-depth.qmd
+    - part: "Multiple Views"
+      chapters:
+        - chapters/stereo.qmd
 
 format:
   live-html:

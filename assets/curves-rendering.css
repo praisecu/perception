@@ -1,0 +1,194 @@
+/* Chapter 6: Curves and Rendering */
+
+.cr-svg {
+  display: block;
+  width: 100%;
+  height: auto;
+  border-radius: 12px;
+  background: rgba(207, 185, 125, 0.06);
+  touch-action: none;
+  user-select: none;
+}
+
+.cr-poly {
+  fill: none;
+  stroke: currentColor;
+  stroke-opacity: 0.35;
+  stroke-width: 1.5;
+  stroke-dasharray: 5 5;
+}
+
+.cr-poly--a { stroke: #4fa38a; stroke-opacity: 0.8; }
+.cr-poly--b { stroke: #c4733d; stroke-opacity: 0.8; }
+
+.cr-curve {
+  fill: none;
+  stroke: #cfb97d;
+  stroke-width: 4;
+  stroke-linecap: round;
+  stroke-linejoin: round;
+}
+
+.cr-curve--a { stroke: #4fa38a; }
+.cr-curve--b { stroke: #c4733d; }
+.cr-curve--hit { stroke: #f2d27a; stroke-width: 6; }
+.cr-curve--ghost { stroke: currentColor; stroke-opacity: 0.45; stroke-width: 2; stroke-dasharray: 8 6; }
+.cr-curve--affine { stroke: #cfb97d; stroke-width: 4; }
+
+.cr-build {
+  fill: none;
+  stroke: #6fa8dc;
+  stroke-width: 1.5;
+}
+
+.cr-buildpt { fill: #6fa8dc; }
+
+.cr-onpt {
+  fill: #fff;
+  stroke: #1d1e00;
+  stroke-width: 2;
+}
+
+.cr-handle {
+  fill: #343607;
+  stroke: #cfb97d;
+  stroke-width: 3;
+  cursor: grab;
+}
+
+.cr-handle--last { fill: #cfb97d; }
+
+.cr-label,
+.cr-svg text {
+  fill: currentColor;
+  font-family: "Nunito Sans", sans-serif;
+  font-size: 13px;
+  font-weight: 700;
+  text-anchor: middle;
+  opacity: 0.75;
+  pointer-events: none;
+}
+
+.cr-pair {
+  display: grid;
+  grid-template-columns: 1fr 1fr;
+  gap: 0.8rem;
+}
+
+.cr-pair figure { margin: 0; }
+
+.cr-pair canvas,
+.cr-square {
+  display: block;
+  width: 100%;
+  max-width: 360px;
+  margin: 0 auto;
+  aspect-ratio: 1;
+  border-radius: 12px;
+  touch-action: none;
+}
+
+.cr-pair figcaption {
+  margin-top: 0.3rem;
+  font-size: 0.85rem;
+  opacity: 0.7;
+  text-align: center;
+}
+
+.cr-raster {
+  display: block;
+  width: 100%;
+  height: auto;
+  border-radius: 12px;
+  image-rendering: pixelated;
+}
+
+/* Ray casting */
+.rc-obj { stroke: rgba(0, 0, 0, 0.35); stroke-width: 1.5; }
+.rc-light { fill: #fff6c8; stroke: #cfb97d; stroke-width: 3; }
+.rc-cam { fill: currentColor; }
+.rc-plane { stroke: currentColor; stroke-opacity: 0.6; stroke-width: 4; }
+.rc-mirror { stroke: #9fc3e6; stroke-width: 6; stroke-linecap: round; }
+.rc-ray { stroke-width: 2; }
+.rc-ray--primary { stroke: #cfb97d; }
+.rc-ray--bounce { stroke: #9fc3e6; }
+.rc-ray--miss { stroke: currentColor; stroke-opacity: 0.3; stroke-dasharray: 4 4; }
+.rc-ray--shadow { stroke: #fff6c8; stroke-dasharray: 3 4; }
+.rc-ray--shadow-blocked { stroke: #ff6b6b; stroke-dasharray: 3 4; }
+
+.cr-strip {
+  display: block;
+  width: 100%;
+  max-width: 480px;
+  height: auto;
+  margin: 0.6rem auto 0;
+  border-radius: 6px;
+  image-rendering: pixelated;
+}
+
+/* Before and after wipe */
+.cr-wipe {
+  position: relative;
+  overflow: hidden;
+  border-radius: 12px;
+  aspect-ratio: 16 / 9;
+  cursor: ew-resize;
+  touch-action: none;
+  user-select: none;
+}
+
+.cr-wipe img {
+  position: absolute;
+  inset: 0;
+  width: 100%;
+  height: 100%;
+  object-fit: cover;
+  pointer-events: none;
+}
+
+.cr-wipe__handle {
+  position: absolute;
+  top: 0;
+  bottom: 0;
+  width: 3px;
+  margin-left: -1.5px;
+  background: #fff;
+  box-shadow: 0 0 6px rgba(0, 0, 0, 0.6);
+  pointer-events: none;
+}
+
+.cr-wipe__handle::after {
+  position: absolute;
+  top: 50%;
+  left: 50%;
+  width: 30px;
+  height: 30px;
+  border: 3px solid #fff;
+  border-radius: 50%;
+  background: rgba(5, 6, 0, 0.6);
+  content: "";
+  transform: translate(-50%, -50%);
+}
+
+.cr-choices {
+  display: flex;
+  flex-wrap: wrap;
+  align-items: center;
+  gap: 0.4rem;
+  font-size: 0.85rem;
+}
+
+.cr-choices b {
+  min-width: 3.2rem;
+}
+
+@media (max-width: 600px) {
+  /* bigger touch targets for dragging control points */
+  .cr-handle {
+    r: 22px;
+  }
+
+  .cr-pair {
+    grid-template-columns: 1fr;
+  }
+}

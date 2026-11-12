@@ -1,0 +1,368 @@
+---
+# Editable code runs in the reader's browser (Pyodide), not at build time.
+engine: markdown
+pyodide:
+  packages:
+    - numpy
+    - matplotlib
+---
+
+# Learning Depth {#sec-learned-depth}
+
+```{=html}
+<link rel="stylesheet" href="../assets/learned-depth.css">
+```
+
+A single image cannot fix the size and distance of what it shows: @sec-image-formation proved it with similar triangles, and @sec-single-view showed how far geometry alone can go. Yet people judge depth from one photograph all the time. We use experience: floors recede, doors have a familiar height, distant things look hazy and small. A neural network can learn the same kind of experience from data.
+
+This chapter builds the ideas needed to train a network that predicts depth from images: how networks learn, why convolutional encoder-decoders suit dense prediction, how to measure success, and why a camera that deliberately codes its blur can make the network's job far easier.
+
+::: {.callout-note appearance="simple"}
+**In this chapter.** Depth as a learning problem · neurons, layers and training · gradient descent · convolutional networks and receptive fields · encoder-decoders and U-Net · losses and metrics for depth · coded apertures and simulated training data · limits of learned depth.
+:::
+
+## Depth as a learning problem
+
+The task is easy to state. Given an image $I$ of size $H \times W$, predict a depth map $D$ of the same size, with one distance in metres for every pixel:
+
+$$
+\hat{D} = f_\theta(I), \qquad f_\theta : \mathbb{R}^{H \times W \times 3} \rightarrow \mathbb{R}^{H \times W}.
+$$
+
+Here $f_\theta$ is a neural network and $\theta$ are its parameters, often millions of numbers. We do not write $f_\theta$ by hand. We show it many pairs of images and true depth maps and let an optimizer adjust $\theta$ until predictions match. This is **supervised learning**.
+
+Two warnings come with the approach. First, a monocular network can only be as good as the cues in its training data: it learns that cars are about 1.5 m tall, not why. Second, scale is fragile. A network trained indoors may predict the right *shape* of an outdoor scene but the wrong overall *size*, the same scale ambiguity we met in @sec-image-formation. We will return to both.
+
+## How a network learns
+
+### Neurons and layers
+
+A neuron computes a weighted sum of its inputs, adds a bias, and passes the result through a nonlinear **activation function** $\sigma$:
+
+$$
+a = \sigma\!\left(\sum_i w_i x_i + b\right).
+$$
+
+Common activations are the rectified linear unit $\text{ReLU}(z) = \max(0, z)$ and the hyperbolic tangent. A **layer** applies many neurons to the same inputs, and a network stacks layers so that each one builds on the features computed by the last. Without the nonlinearity, any stack of layers would collapse into a single linear map; with it, a network can approximate almost any function.
+
+### Loss and gradient descent
+
+Training needs a number that says how wrong the network is: the **loss**. For regression, a simple choice is the mean squared error over $N$ examples,
+
+$$
+\mathcal{L}(\theta) = \frac{1}{N} \sum_{n=1}^{N} \big(f_\theta(x_n) - y_n\big)^2 .
+$$
+
+**Gradient descent** lowers the loss by repeatedly stepping against its gradient,
+
+$$
+\theta \leftarrow \theta - \eta \, \nabla_\theta \mathcal{L},
+$$
+
+where $\eta$ is the **learning rate**. **Backpropagation** computes $\nabla_\theta \mathcal{L}$ efficiently with the chain rule, passing error signals backwards from the output to every weight. In practice the gradient is estimated on small random **mini-batches**, and improved optimizers such as Adam adapt the step size for each parameter.
+
+Train a small network yourself. It has one input, one hidden layer of tanh neurons and one output, and it learns from the gold training points. The hollow points are held out for **validation**: the network never trains on them, so they reveal whether it has learned the curve or memorized the noise.
+
+```{=html}
+<div class="sim" id="nn-sim">
+  <canvas class="ld-plot" aria-label="Training points, validation points and the network's current prediction"></canvas>
+  <p class="ld-legend"><span><i class="ld-dot-train"></i>training points</span><span><i class="ld-dot-val"></i>validation points</span><span><i class="ld-line-pred"></i>network prediction</span><span><i class="ld-line-true"></i>true function</span></p>
+  <canvas class="ld-loss" aria-label="Training and validation loss over time"></canvas>
+  <div class="sim__controls">
+    <span class="sim__group">Target
+      <button type="button" class="btn btn-gold-outline btn-sm is-on" data-target="sine">Wave</button>
+      <button type="button" class="btn btn-gold-outline btn-sm" data-target="step">Step</button>
+      <button type="button" class="btn btn-gold-outline btn-sm" data-target="bump">Bump</button>
+    </span>
+    <label>Hidden layer <input type="range" name="hidden" min="1" max="32" step="1" value="8"><output></output></label>
+    <label>Learning rate <input type="range" name="lr" min="-3" max="0" step="0.1" value="-1.6"><output></output></label>
+    <label>Label noise <input type="range" name="noise" min="0" max="0.4" step="0.02" value="0.1"><output></output></label>
+    <button type="button" class="btn btn-primary btn-sm" data-action="play">Train</button>
+    <button type="button" class="btn btn-gold-outline btn-sm" data-action="step">One step</button>
+    <button type="button" class="btn btn-gold-outline btn-sm" data-action="reset">Reset</button>
+  </div>
+  <p class="sim__readout"></p>
+</div>
+```
+
+Things to try: with one or two neurons, the wave cannot be fitted however long you train (**underfitting**). With 32 neurons and high label noise, training loss keeps falling while validation loss turns upward (**overfitting**). A learning rate that is too high makes the loss jump around instead of settling.
+
+### The shape of the loss
+
+The loss of a real network lives in millions of dimensions, but a two-dimensional surface already shows the main behaviours. Drag the gold point to choose a starting value for the two parameters, set the learning rate, and descend.
+
+```{=html}
+<div class="sim" id="gd-sim">
+  <canvas class="ld-gd" aria-label="A loss surface with contour bands and the path taken by gradient descent"></canvas>
+  <div class="sim__controls">
+    <span class="sim__group">Surface
+      <button type="button" class="btn btn-gold-outline btn-sm" data-surface="bowl">Round bowl</button>
+      <button type="button" class="btn btn-gold-outline btn-sm is-on" data-surface="valley">Narrow valley</button>
+      <button type="button" class="btn btn-gold-outline btn-sm" data-surface="twin">Two valleys</button>
+    </span>
+    <label>Learning rate <input type="range" name="lr" min="-2.5" max="0" step="0.05" value="-1"><output></output></label>
+    <button type="button" class="btn btn-gold-outline btn-sm" data-action="momentum">Momentum: off</button>
+    <button type="button" class="btn btn-primary btn-sm" data-action="run">Descend</button>
+  </div>
+  <p class="sim__readout"></p>
+</div>
+```
+
+In the narrow valley, a learning rate small enough to stay stable across the steep direction crawls along the shallow one, while a larger rate zigzags and then diverges. **Momentum** keeps a running average of past steps, which damps the zigzag and speeds the crawl. In the two valleys, where you start decides which minimum you reach: a reminder that training finds a good solution, not necessarily the best one.
+
+## Convolutional networks
+
+Connecting every pixel to every neuron would need billions of weights for even a small image, and it would ignore what we know about images: nearby pixels belong together, and a pattern means the same thing wherever it appears. A **convolutional layer** builds both facts in. It slides a small learned kernel across the image, exactly like the filters of @sec-features, and reuses the same weights at every position. A layer with 64 kernels of size $3 \times 3$ over 32 input channels has only $64 \times 3 \times 3 \times 32 \approx 18{,}000$ weights, whatever the image size.
+
+Stacking convolutions lets later layers see more of the image. The region of the input that can influence one output value is its **receptive field**. Depth needs context: to know that a patch of floor is far away, a unit must see the room, not one tile. **Downsampling** (pooling or strided convolution) is what makes the receptive field grow quickly.
+
+```{=html}
+<div class="sim" id="rf-sim">
+  <canvas class="ld-rf" aria-label="Units in each layer that feed one output unit"></canvas>
+  <div class="sim__controls">
+    <label>Layers <input type="range" name="layers" min="1" max="5" step="1" value="3"><output></output></label>
+    <label>Kernel <input type="range" name="kernel" min="3" max="7" step="2" value="3"><output></output></label>
+    <button type="button" class="btn btn-gold-outline btn-sm" data-action="pool">Downsampling: off</button>
+  </div>
+  <p class="sim__readout"></p>
+</div>
+```
+
+With five $3 \times 3$ layers and no downsampling, each output sees only an $11 \times 11$ patch. Halve the resolution after every layer and the same five layers see $63 \times 63$.
+
+## Encoder-decoders and U-Net
+
+Depth estimation is a **dense** prediction task: the output is an image, not a single label. The standard architecture has two halves:
+
+- The **encoder** repeatedly convolves and downsamples, trading spatial detail for context. At the bottom, the **bottleneck** is a small, deep summary of what is in the scene and roughly where.
+- The **decoder** reverses the process, upsampling step by step back to full resolution to produce one depth value per pixel.
+
+The bottleneck has lost the fine detail needed for sharp object boundaries. **U-Net**, first developed for biomedical image segmentation, fixes this with **skip connections**: each decoder level also receives the encoder's feature map from the same resolution, so it can combine *what* (from the bottleneck) with *exactly where* (from the encoder). Hover over the blocks, then turn the skip connections off.
+
+```{=html}
+<div class="sim" id="unet-sim">
+  <div class="ld-unet">
+    <svg viewBox="0 0 720 300" role="img" aria-label="U-Net architecture: an encoder that halves resolution four times, a bottleneck, and a decoder with skip connections"></svg>
+    <div>
+      <canvas aria-label="Depth predicted with or without skip connections"></canvas>
+      <p class="ld-unet__caption"></p>
+    </div>
+  </div>
+  <div class="sim__controls">
+    <button type="button" class="btn btn-gold-outline btn-sm is-on" data-action="skips">Skip connections: on</button>
+  </div>
+  <p class="sim__readout"></p>
+</div>
+```
+
+The depth maps on the right are illustrative rather than outputs of a trained network: the "without skips" view is the true depth reduced 16 times and smoothly enlarged, which is roughly all the bottleneck can describe. Real networks without skips show exactly this smearing at depth edges.
+
+## Measuring depth predictions
+
+### Losses for training
+
+The **L1 loss** $\frac{1}{N}\sum_i |\hat{d}_i - d_i|$ and the **L2 loss** $\frac{1}{N}\sum_i (\hat{d}_i - d_i)^2$ compare predicted and true depth pixel by pixel. L1 is less sensitive to a few large errors, which are common at object boundaries, and is a frequent default.
+
+Because a monocular network struggles most with the overall scale, Eigen and colleagues proposed a **scale-invariant loss** on log depth. With $g_i = \log \hat{d}_i - \log d_i$,
+
+$$
+\mathcal{L}_{\text{SI}} = \frac{1}{N}\sum_i g_i^2 \; - \; \frac{\lambda}{N^2}\Big(\sum_i g_i\Big)^2 .
+$$
+
+With $\lambda = 1$, multiplying every prediction by the same factor adds a constant to every $g_i$ and leaves the loss unchanged: the network is judged only on the *shape* of the scene. Values of $\lambda$ between 0 and 1 blend scale-invariant and absolute error.
+
+### Metrics for evaluation
+
+Papers report a standard set of numbers, each over all valid pixels:
+
+| Metric | Definition | Better |
+|---|---|---|
+| AbsRel | $\frac{1}{N}\sum_i \lvert \hat{d}_i - d_i \rvert / d_i$ | lower |
+| RMSE | $\sqrt{\frac{1}{N}\sum_i (\hat{d}_i - d_i)^2}$ (metres) | lower |
+| $\delta < 1.25$ | fraction of pixels with $\max(\hat{d}_i/d_i,\, d_i/\hat{d}_i) < 1.25$ | higher |
+
+AbsRel weighs errors relative to distance, so a 10 cm error matters more at 1 m than at 10 m. RMSE is in metres and dominated by the largest errors. $\delta < 1.25$ asks a simple question: how often is the prediction within 25 % of the truth?
+
+The scene below was rendered in Blender together with its exact depth map, the kind of perfect ground truth that only simulation provides. The prediction is simulated: use the sliders to give it a wrong overall scale, noise, or smeared boundaries, and watch how each metric responds. Move over either image to read depths in metres.
+
+```{=html}
+<div class="sim" id="depth-sim">
+  <div class="sim__pair ld-pair">
+    <figure><canvas aria-label="Rendered colour image"></canvas><figcaption>Rendered image</figcaption></figure>
+    <figure><canvas aria-label="Depth map"></canvas><figcaption class="ld-right-caption">Simulated network prediction</figcaption></figure>
+  </div>
+  <p class="ld-probe">Move over an image to read the depth.</p>
+  <div class="sim__controls">
+    <span class="sim__group">Show
+      <button type="button" class="btn btn-gold-outline btn-sm" data-view="gt">Ground truth</button>
+      <button type="button" class="btn btn-gold-outline btn-sm is-on" data-view="pred">Prediction</button>
+      <button type="button" class="btn btn-gold-outline btn-sm" data-view="error">Error</button>
+    </span>
+    <label>Scale error <input type="range" name="scale" min="0.6" max="1.5" step="0.01" value="1"><output></output></label>
+    <label>Noise <input type="range" name="noise" min="0" max="30" step="1" value="5"><output></output></label>
+    <label>Blurred edges <input type="range" name="smear" min="0" max="12" step="1" value="0"><output></output></label>
+    <button type="button" class="btn btn-gold-outline btn-sm" data-action="median">Median scaling: off</button>
+  </div>
+  <div class="ld-metrics"></div>
+</div>
+```
+
+Set the scale error to 1.3. AbsRel and RMSE grow sharply, but the scale-invariant loss does not move. Now switch on **median scaling**, which rescales the prediction so its median ratio to the truth is 1, as many papers do for methods that cannot know absolute scale. The errors fall back. Median scaling is fair for comparing shapes, but a robot that needs to stop 30 cm from a wall needs **metric** depth, with no rescaling allowed.
+
+### Try it in code
+
+The cell below computes the metrics and both losses for a small depth map, then confirms that the scale-invariant loss ignores a global scale. It uses only NumPy.
+
+```{pyodide}
+import numpy as np
+
+rng = np.random.default_rng(0)
+
+# A small "true" depth map: a floor that recedes, with a box in front
+H, W = 48, 64
+rows = np.linspace(1.0, 0.0, H)[:, None]
+gt = 1.0 + 5.0 * (1 - rows) * np.ones((1, W))      # 1 m near the bottom, 6 m at the top
+gt[20:36, 18:34] = 1.4                              # a box 1.4 m away
+
+def metrics(pred, gt):
+    absrel = np.mean(np.abs(pred - gt) / gt)
+    rmse = np.sqrt(np.mean((pred - gt) ** 2))
+    ratio = np.maximum(pred / gt, gt / pred)
+    delta1 = np.mean(ratio < 1.25)
+    return absrel, rmse, delta1
+
+def scale_invariant_loss(pred, gt, lam=1.0):
+    g = np.log(pred) - np.log(gt)
+    return np.mean(g ** 2) - lam * np.mean(g) ** 2
+
+pred = gt * (1 + 0.08 * rng.standard_normal(gt.shape))   # a decent prediction
+for name, p in [("prediction", pred), ("same, 30% too far", 1.3 * pred)]:
+    a, r, d = metrics(p, gt)
+    print(f"{name:20s} AbsRel {a:.3f}  RMSE {r:.3f} m  delta<1.25 {d:.1%}  "
+          f"L1 {np.mean(np.abs(p - gt)):.3f}  SI {scale_invariant_loss(p, gt):.4f}")
+```
+
+::: {.callout-tip}
+## Exercise
+Change `lam` to 0.5 and run the cell again. Why does the scale-invariant loss now change when the prediction is scaled? Then make the box prediction wrong (for example `pred[20:36, 18:34] = 3.0`) and see which metric reacts most.
+:::
+
+## Coding the aperture
+
+A monocular network has to infer depth from context alone. **Depth from defocus** offers a physical cue: as @sec-image-formation showed, blur grows with distance from the focal plane. A network can learn to read that blur. But an ordinary circular aperture leaves two problems:
+
+- **Sign ambiguity.** A point slightly in front of the focal plane and one slightly behind it produce the same disc of blur.
+- **Weak information.** A disc is a low-pass filter, so heavy blur erases the very texture that would reveal how blurred the image is.
+
+A **coded aperture** places a patterned mask in the lens, so the blur of every point takes the shape of the pattern, scaled by its defocus. An asymmetric pattern flips as a point passes through the focal plane, which removes the sign ambiguity, and a well-chosen pattern preserves more image detail at each scale. Approaches such as PhaseCam3D go further and learn the optical element jointly with the network.
+
+The figure below simulates both apertures from the rendered colour image and depth map. Choose the focus distance and compare the blur patterns (the point-spread functions, or PSFs) at four depths.
+
+```{=html}
+<div class="sim" id="coded-sim">
+  <div class="ld-coded-grid">
+    <canvas class="ld-coded" aria-label="The scene re-blurred according to depth"></canvas>
+    <div>
+      <p class="ld-side-title">Blur pattern at each depth</p>
+      <canvas class="ld-psfs" aria-label="Point-spread functions at 0.6, 1, 2 and 4 metres"></canvas>
+      <canvas class="ld-blurplot" aria-label="Blur against depth"></canvas>
+    </div>
+  </div>
+  <div class="sim__controls">
+    <span class="sim__group">Aperture
+      <button type="button" class="btn btn-gold-outline btn-sm" data-mode="open">Open</button>
+      <button type="button" class="btn btn-gold-outline btn-sm is-on" data-mode="coded">Coded</button>
+    </span>
+    <label>Focus distance <input type="range" name="focus" min="0.6" max="4" step="0.1" value="1.5"><output></output></label>
+    <span class="sim__group">Image model
+      <button type="button" class="btn btn-gold-outline btn-sm is-on" data-model="layered">Layered</button>
+      <button type="button" class="btn btn-gold-outline btn-sm" data-model="linear">Linear</button>
+    </span>
+  </div>
+  <p class="sim__readout"></p>
+</div>
+```
+
+### Simulating training data
+
+Real coded cameras are rare, but coded images are easy to simulate, and that is how such networks are usually trained. The recipe has three steps:
+
+1. **Compute the PSF** of the coded lens at a range of depths, from the mask pattern and the lens optics.
+2. **Render a coded image** from an all-in-focus (AiF) colour image and its depth map: blur each depth layer with its PSF and combine the layers.
+3. **Train a supervised network** to map coded images back to metric depth.
+
+The second step needs care. The simplest **linear model** blurs each depth layer and adds the results. It is fast, but it ignores occlusion: at the edge of a near object, background colour leaks over the foreground. A **layered (non-linear) model** composites the blurred layers from far to near, letting nearer layers cover what lies behind them, much like alpha compositing in graphics. Switch the image model in the figure above and look closely at the edges of the nearest drone.
+
+Datasets matter just as much. Indoor benchmarks such as NYU Depth V2, captured with a Microsoft Kinect, provide real images with measured depth. Synthetic datasets rendered from 3D scenes (see @sec-curves-rendering) provide perfect depth and unlimited variety, and they make it possible to simulate any lens, including ones that do not exist yet. Results from the author's group show that a network trained on coded images from only about 2,000 examples, mixing real and simulated data, can estimate metric depth in scenes it has never seen, because it learns the geometry of the lens rather than the appearance of particular rooms.
+
+## A taste of training, in code
+
+Real depth networks are trained with deep-learning frameworks on GPUs. To see the mechanics without any of that, the cell below trains a one-hidden-layer network with plain NumPy and hand-written backpropagation, on the same kind of toy problem as the playground.
+
+```{pyodide}
+import numpy as np
+import matplotlib.pyplot as plt
+
+rng = np.random.default_rng(1)
+x = np.linspace(-1, 1, 40)[:, None]
+y = np.sin(3 * x) + 0.1 * rng.standard_normal(x.shape)
+
+H = 16                                     # hidden neurons
+W1 = rng.standard_normal((1, H)); b1 = np.zeros(H)
+W2 = rng.standard_normal((H, 1)) / np.sqrt(H); b2 = np.zeros(1)
+lr = 0.1
+losses = []
+
+for step in range(3000):
+    # forward pass
+    z = x @ W1 + b1
+    h = np.tanh(z)
+    pred = h @ W2 + b2
+    loss = np.mean((pred - y) ** 2)
+    losses.append(loss)
+    # backward pass: the chain rule, one layer at a time
+    d_pred = 2 * (pred - y) / len(x)
+    dW2 = h.T @ d_pred;  db2 = d_pred.sum(0)
+    d_h = d_pred @ W2.T
+    d_z = d_h * (1 - h ** 2)              # derivative of tanh
+    dW1 = x.T @ d_z;     db1 = d_z.sum(0)
+    # gradient descent update
+    W1 -= lr * dW1; b1 -= lr * db1; W2 -= lr * dW2; b2 -= lr * db2
+
+fig, axes = plt.subplots(1, 2, figsize=(11, 3.2))
+axes[0].scatter(x, y, s=14, label="data")
+axes[0].plot(x, np.tanh(x @ W1 + b1) @ W2 + b2, lw=2.5, label="network")
+axes[0].legend(); axes[0].set_title("Fit after training")
+axes[1].semilogy(losses); axes[1].set_title("Training loss"); axes[1].set_xlabel("step")
+plt.tight_layout(); plt.show()
+print(f"final loss {losses[-1]:.4f}")
+```
+
+::: {.callout-tip}
+## Exercise
+Set `lr = 1.5` and run again. What happens to the loss curve, and how does it match what you saw on the loss surface earlier? Then try `H = 2`.
+:::
+
+## Limits of learned depth
+
+Learned depth is powerful and widely used, but a robot designer should know where it breaks:
+
+- **Domain shift.** A network trained indoors may fail outdoors, under unusual lighting, or with a different camera. Its errors are often confident.
+- **Scale.** Monocular networks learn scale from object sizes in training data. Change the camera's focal length or field of view and the scale can drift. Physical cues such as coded blur, stereo (@sec-stereo) or motion tie depth to the sensor rather than to habits learned from data.
+- **Thin and reflective things.** Wires, glass, mirrors and dark surfaces are underrepresented in data and hard for every depth sensor.
+- **No guarantees.** Unlike triangulation, a network gives no error bound unless it is trained to estimate its own uncertainty.
+
+The best systems combine learned priors with geometry and optics, which is the theme of the chapters ahead.
+
+## Summary
+
+- Depth from a single image is ambiguous in principle, but networks can learn the cues that make it solvable in practice.
+- Networks are stacks of weighted sums and nonlinearities, trained by gradient descent on a loss, with gradients from backpropagation.
+- Convolutions share weights across the image; downsampling grows the receptive field so units see context.
+- Encoder-decoders produce dense outputs; U-Net's skip connections restore sharp boundaries.
+- L1 and scale-invariant losses train depth networks; AbsRel, RMSE and $\delta < 1.25$ evaluate them, and median scaling hides scale errors that robots cannot ignore.
+- Coded apertures add a physical, sign-resolving depth cue; simulated coded images from RGB and depth make training practical, and a layered image model handles occlusion edges correctly.
+
+```{=html}
+<script src="../demos/learned-depth.js"></script>
+```

@@ -1,0 +1,368 @@
+---
+# Editable code runs in the reader's browser (Pyodide), not at build time.
+engine: markdown
+pyodide:
+  packages:
+    - numpy
+    - matplotlib
+---
+
+# Curves and Rendering {#sec-curves-rendering}
+
+```{=html}
+<link rel="stylesheet" href="../assets/curves-rendering.css">
+```
+
+Computer vision and computer graphics are two directions along the same road. Graphics starts with a description of a scene, its shapes, materials, lights and camera, and produces an image. Vision starts with an image and tries to recover the description. Every time a robot estimates depth, shape or lighting, it is solving graphics backwards.
+
+That is why a perception engineer needs to know how images are synthesized. This chapter covers the two halves of graphics that matter most for perception: how shapes are *represented*, with curves, splines and meshes, and how they are *rendered* into pixels, with projection, rasterization, shading and ray tracing.
+
+::: {.callout-note appearance="simple"}
+**In this chapter.** Implicit and parametric curves · Bezier curves and de Casteljau's algorithm · splines and continuity · meshes and normals · the rasterization pipeline and the z-buffer · shading models and normal maps · ray tracing and the rendering equation · why rendering matters for perception.
+:::
+
+## Modeling, rendering and animation
+
+Computer graphics rests on three pillars:
+
+- **Modeling** describes the shape and appearance of objects.
+- **Rendering** turns a modeled scene into an image as seen from a camera.
+- **Animation** describes how the scene changes over time.
+
+Tools such as Blender, Unity and Unreal Engine combine all three. Blender has an unusual history: it began in 1998 as an in-house tool at a Dutch animation studio, and when the company ran out of money in 2002, its creator Ton Roosendaal led a crowdfunding campaign to buy the code and release it as open source. It is now used for feature films, scientific visualization and, throughout this book, for rendering physically accurate test scenes.
+
+## Representing curves
+
+There are two fundamentally different ways to describe a curve.
+
+An **implicit** curve is the set of points that satisfy an equation, $f(x, y) = 0$. For an ellipse,
+
+$$
+f(x, y) = \frac{x^2}{a^2} + \frac{y^2}{b^2} - 1 = 0.
+$$
+
+The sign of $f$ tells us whether a point is inside ($f < 0$) or outside ($f > 0$). Implicit forms make *testing* points easy.
+
+A **parametric** curve gives the points directly as a function of a parameter $t$:
+
+$$
+\mathbf{p}(t) = \big(a \cos 2\pi t,\; b \sin 2\pi t\big), \qquad t \in [0, 1].
+$$
+
+Parametric forms make *generating* points easy: just sweep $t$. Move over the left panel to test points, and sweep $t$ on the right.
+
+```{=html}
+<div class="sim" id="curve-kinds">
+  <div class="cr-pair">
+    <figure><canvas></canvas><figcaption>Implicit: color shows the sign of f(x, y)</figcaption></figure>
+    <figure><canvas></canvas><figcaption>Parametric: the point p(t) traces the curve</figcaption></figure>
+  </div>
+  <div class="sim__controls">
+    <label>a <input type="range" name="a" min="0.4" max="1.5" step="0.01" value="1.2"><output></output></label>
+    <label>b <input type="range" name="b" min="0.4" max="1.5" step="0.01" value="0.75"><output></output></label>
+    <label>t <input type="range" name="t" min="0" max="1" step="0.01" value="0.35"><output></output></label>
+  </div>
+  <p class="sim__readout"></p>
+</div>
+```
+
+Both forms reappear in perception. Implicit surfaces describe signed distance fields used in 3D reconstruction, while parametric curves describe trajectories, lane boundaries and the paths robots follow.
+
+## Bezier curves
+
+Designers need curves they can shape intuitively. A **Bezier curve** of degree $n$ is defined by $n + 1$ **control points** $\mathbf{P}_0, \dots, \mathbf{P}_n$:
+
+$$
+\mathbf{B}(t) = \sum_{i=0}^{n} \binom{n}{i} (1 - t)^{n-i} t^{i} \, \mathbf{P}_i, \qquad t \in [0, 1].
+$$
+
+The weights are the **Bernstein polynomials**. They are never negative and always sum to one, which gives Bezier curves their useful properties:
+
+- The curve starts at $\mathbf{P}_0$, ends at $\mathbf{P}_n$, and leaves each end tangent to the control polygon.
+- The curve stays inside the convex hull of its control points.
+- The curve is **affine invariant**: transforming the control points and then drawing the curve gives the same result as drawing the curve and then transforming it.
+
+### De Casteljau's algorithm
+
+There is a beautiful geometric way to evaluate $\mathbf{B}(t)$ without any polynomials. Linearly interpolate each pair of neighboring control points at fraction $t$. This gives one fewer point. Repeat until a single point remains: that point is $\mathbf{B}(t)$. This is **de Casteljau's algorithm**, and it is both numerically stable and easy to understand.
+
+Drag the control points and sweep $t$ to watch the construction. **Split at t** shows another gift of the algorithm: the intermediate points are exactly the control points of the two halves of the curve. **Affine test** applies the same affine transformation in both orders.
+
+```{=html}
+<div class="sim" id="bezier-sim">
+  <svg class="cr-svg" viewBox="0 0 680 360" role="img" aria-label="A Bezier curve with draggable control points and de Casteljau construction lines"></svg>
+  <div class="sim__controls">
+    <label>t <input type="range" name="t" min="0" max="1" step="0.01" value="0.4"><output></output></label>
+    <button type="button" class="btn btn-gold-outline btn-sm" data-act="build">Construction</button>
+    <button type="button" class="btn btn-gold-outline btn-sm" data-act="split">Split at t</button>
+    <button type="button" class="btn btn-gold-outline btn-sm" data-act="affine">Affine test</button>
+    <button type="button" class="btn btn-gold-outline btn-sm" data-act="add">Add point</button>
+    <button type="button" class="btn btn-gold-outline btn-sm" data-act="remove">Remove point</button>
+  </div>
+  <p class="sim__readout"></p>
+</div>
+```
+
+## Splines and continuity
+
+A single Bezier curve has a drawback: every control point influences the entire curve, and high degrees become hard to control. In practice, long curves are built from short polynomial pieces joined end to end. Such piecewise curves are called **splines**.
+
+Where two pieces meet, we care about how smoothly they join:
+
+- $C^0$: the pieces meet, but may form a corner.
+- $C^1$: the first derivatives match, so the tangent is continuous.
+- $C^2$: the second derivatives match as well, so the curvature is continuous.
+
+Curvature continuity matters for robots: a path with a curvature jump demands an instantaneous change in steering angle, which no real vehicle can deliver.
+
+A **B-spline** of degree $p$ blends control points with basis functions that are nonzero over only $p + 1$ pieces. It is automatically $C^{p-1}$ continuous, and it has **local control**: moving one control point changes only the nearby part of the curve. Drag a point and watch which pieces light up. Then compare with a single Bezier curve through the same points.
+
+```{=html}
+<div class="sim" id="bspline-sim">
+  <svg class="cr-svg" viewBox="0 0 660 360" role="img" aria-label="A B-spline with draggable control points, highlighting the pieces each point affects"></svg>
+  <div class="sim__controls">
+    <span class="sim__group">Degree
+      <button type="button" class="btn btn-gold-outline btn-sm" data-degree="1">1</button>
+      <button type="button" class="btn btn-gold-outline btn-sm" data-degree="2">2</button>
+      <button type="button" class="btn btn-gold-outline btn-sm is-on" data-degree="3">3</button>
+    </span>
+    <button type="button" class="btn btn-gold-outline btn-sm" data-act="bezier">Compare with one Bezier curve</button>
+  </div>
+  <p class="sim__readout"></p>
+</div>
+```
+
+## Surfaces and meshes
+
+Curves extend naturally to surfaces: a Bezier or B-spline patch uses a grid of control points and two parameters $(u, v)$. For rendering, however, almost every surface is eventually converted into a **mesh**: a set of **vertices** (3D points) joined into **faces**, usually triangles.
+
+Lighting depends on the direction a surface faces, its **normal**. A triangle with vertices $\mathbf{a}, \mathbf{b}, \mathbf{c}$ has the face normal
+
+$$
+\mathbf{n} = \frac{(\mathbf{b} - \mathbf{a}) \times (\mathbf{c} - \mathbf{a})}{\lVert (\mathbf{b} - \mathbf{a}) \times (\mathbf{c} - \mathbf{a}) \rVert}.
+$$
+
+Using one normal per face gives **flat shading**, where every facet is visible. Averaging the face normals around each vertex and interpolating them across triangles gives **smooth shading**, which hides the facets even on coarse meshes. Change the resolution and compare the modes. Drag to rotate.
+
+```{=html}
+<div class="sim" id="mesh-sim">
+  <canvas class="cr-square"></canvas>
+  <div class="sim__controls">
+    <label>Resolution <input type="range" name="res" min="3" max="24" step="1" value="7"><output></output></label>
+    <span class="sim__group">
+      <button type="button" class="btn btn-gold-outline btn-sm" data-mode="wire">Wireframe</button>
+      <button type="button" class="btn btn-gold-outline btn-sm is-on" data-mode="flat">Flat</button>
+      <button type="button" class="btn btn-gold-outline btn-sm" data-mode="smooth">Smooth</button>
+      <button type="button" class="btn btn-gold-outline btn-sm" data-mode="normals">Normals</button>
+    </span>
+  </div>
+  <p class="sim__readout"></p>
+</div>
+```
+
+## The rasterization pipeline
+
+Real-time graphics, from video games to robot simulators, renders meshes by **rasterization**. Each triangle passes through a pipeline:
+
+1. **Model transform:** place the object in the world.
+2. **View transform:** express it in the camera's frame, using the extrinsics $[R \mid t]$ of @sec-camera-models.
+3. **Projection:** apply perspective projection, the same $K[R \mid t]$ model, so that vertices land at pixel coordinates.
+4. **Rasterization:** find every pixel whose center lies inside the projected triangle. Each such pixel sample is a **fragment**.
+5. **Visibility:** keep only the nearest fragment at each pixel.
+6. **Shading:** compute each surviving fragment's color.
+
+Visibility is solved by the **z-buffer**: an extra image that stores, for each pixel, the depth of the nearest surface drawn so far. A new fragment is written only if it is nearer than the stored value. The two triangles below intersect, so no drawing order can be correct for every pixel, yet the z-buffer resolves them pixel by pixel. Step through the fragments, view the depth buffer, then try turning the depth test off and swapping the draw order.
+
+```{=html}
+<div class="sim" id="raster-sim">
+  <canvas class="cr-raster"></canvas>
+  <div class="sim__controls">
+    <button type="button" class="btn btn-primary btn-sm" data-act="step">Next fragment</button>
+    <button type="button" class="btn btn-gold-outline btn-sm" data-act="row">Next 28</button>
+    <button type="button" class="btn btn-gold-outline btn-sm" data-act="run">Run</button>
+    <button type="button" class="btn btn-gold-outline btn-sm" data-act="reset">Reset</button>
+    <button type="button" class="btn btn-gold-outline btn-sm is-on" data-act="ztest">Depth test: on</button>
+    <button type="button" class="btn btn-gold-outline btn-sm" data-act="swap">Draw teal first</button>
+    <span class="sim__group">Show
+      <button type="button" class="btn btn-gold-outline btn-sm is-on" data-view="color">Color</button>
+      <button type="button" class="btn btn-gold-outline btn-sm" data-view="depth">Depth buffer</button>
+    </span>
+  </div>
+  <p class="sim__readout"></p>
+</div>
+```
+
+The depth buffer is not just a rendering trick. It is exactly the kind of **depth map** a perception system tries to estimate, and simulators hand it to us for free.
+
+## Shading and lighting
+
+Once we know which surface is visible at a pixel, we need its brightness. The simplest model is **Lambertian** (perfectly diffuse) reflection: brightness depends only on the angle between the normal $\mathbf{n}$ and the direction to the light $\mathbf{l}$,
+
+$$
+I = k_a + k_d \max(0, \mathbf{n} \cdot \mathbf{l}).
+$$
+
+The **Phong** model adds a specular highlight around the mirror direction $\mathbf{r}$ of the light, seen from the view direction $\mathbf{v}$:
+
+$$
+I = k_a + k_d \max(0, \mathbf{n} \cdot \mathbf{l}) + k_s \max(0, \mathbf{r} \cdot \mathbf{v})^{\alpha},
+$$
+
+where the shininess $\alpha$ controls how tight the highlight is. **Blinn-Phong** replaces $\mathbf{r} \cdot \mathbf{v}$ with $\mathbf{n} \cdot \mathbf{h}$, using the half vector $\mathbf{h}$ between $\mathbf{l}$ and $\mathbf{v}$, which is cheaper and often more realistic.
+
+Drag on the sphere to move the light. Then switch on the **normal map**: real games fake fine surface detail by perturbing the normals from a texture while keeping the geometry simple. Notice that the outline of the sphere stays perfectly round.
+
+```{=html}
+<div class="sim" id="shading-sim">
+  <canvas class="cr-square"></canvas>
+  <div class="sim__controls">
+    <span class="sim__group">
+      <button type="button" class="btn btn-gold-outline btn-sm" data-model="lambert">Lambert</button>
+      <button type="button" class="btn btn-gold-outline btn-sm is-on" data-model="phong">Phong</button>
+      <button type="button" class="btn btn-gold-outline btn-sm" data-model="blinn">Blinn-Phong</button>
+      <button type="button" class="btn btn-gold-outline btn-sm" data-act="bumps">Normal map</button>
+    </span>
+    <label>Ambient k<sub>a</sub> <input type="range" name="ka" min="0" max="0.5" step="0.01" value="0.1"><output></output></label>
+    <label>Diffuse k<sub>d</sub> <input type="range" name="kd" min="0" max="1" step="0.01" value="0.8"><output></output></label>
+    <label>Specular k<sub>s</sub> <input type="range" name="ks" min="0" max="1" step="0.01" value="0.5"><output></output></label>
+    <label>Shininess α <input type="range" name="shine" min="2" max="128" step="1" value="24"><output></output></label>
+  </div>
+  <p class="sim__readout"></p>
+</div>
+```
+
+Shading is also a perception cue. Humans judge shape from shading effortlessly, and **shape from shading** and **photometric stereo** recover surface normals by inverting exactly these equations.
+
+## Ray tracing and the rendering equation
+
+Rasterization asks, for each triangle, which pixels it covers. **Ray tracing** turns the question around and asks, for each pixel, what it sees. A ray is cast from the camera through the pixel into the scene. At the nearest hit, a **shadow ray** toward the light tells whether the point is lit, and for mirrors and glass, the ray **bounces** and continues.
+
+Step through the rays below, a top-down slice of a scene. Watch shadow rays get blocked, and raise the bounce limit to see the objects appear in the mirror.
+
+```{=html}
+<div class="sim" id="raycast-sim">
+  <svg class="cr-svg" viewBox="0 0 660 390" role="img" aria-label="A top-down view of rays cast from a camera through an image row into a scene of circles, a light and a mirror"></svg>
+  <canvas class="cr-strip"></canvas>
+  <div class="sim__controls">
+    <button type="button" class="btn btn-primary btn-sm" data-act="next">Next ray</button>
+    <button type="button" class="btn btn-gold-outline btn-sm" data-act="all">Trace all</button>
+    <button type="button" class="btn btn-gold-outline btn-sm" data-act="reset">Reset</button>
+    <label>Bounces <input type="range" name="bounces" min="0" max="2" step="1" value="1"><output></output></label>
+  </div>
+  <p class="sim__readout"></p>
+</div>
+```
+
+Physically based renderers such as Blender's Cycles follow this idea to its conclusion. The light leaving a surface point $\mathbf{x}$ in direction $\omega_o$ is the light it emits plus all the light arriving from every direction $\omega_i$ that it reflects:
+
+$$
+L_o(\mathbf{x}, \omega_o) = L_e(\mathbf{x}, \omega_o) + \int_{\Omega} f_r(\mathbf{x}, \omega_i, \omega_o) \, L_i(\mathbf{x}, \omega_i) \, (\mathbf{n} \cdot \omega_i) \, d\omega_i.
+$$
+
+This is the **rendering equation**. It is recursive, since the incoming light $L_i$ is itself the outgoing light of some other surface, and renderers estimate it by tracing many random paths per pixel and averaging. The noise you see in a quick render, and the denoisers that remove it, come from this random sampling. A related modern trick, deep learning super sampling (DLSS), renders at low resolution and uses a neural network to infer the full-resolution image.
+
+## What a renderer computes
+
+A renderer knows everything about the scene, so it can output far more than a pretty picture. Below is the Blender scene from @sec-image-formation, rendered as several **passes**: the final image, shading without textures, surface normals (colored by direction), inverse depth (near is bright) and the triangle mesh itself. Pick a pass for each side and drag across the image to compare.
+
+```{=html}
+<div class="sim" id="passes-sim">
+  <div class="cr-wipe">
+    <img alt="Right-hand render pass of the drone scene">
+    <img alt="Left-hand render pass of the drone scene">
+    <span class="cr-wipe__handle"></span>
+  </div>
+  <div class="sim__controls">
+    <span class="cr-choices"><b>Left</b>
+      <button type="button" class="btn btn-gold-outline btn-sm" data-left="mesh">Mesh</button>
+      <button type="button" class="btn btn-gold-outline btn-sm" data-left="shading">Shading</button>
+      <button type="button" class="btn btn-gold-outline btn-sm" data-left="normals">Normals</button>
+      <button type="button" class="btn btn-gold-outline btn-sm" data-left="depth">Depth</button>
+    </span>
+    <span class="cr-choices"><b>Right</b>
+      <button type="button" class="btn btn-gold-outline btn-sm" data-right="final">Final</button>
+      <button type="button" class="btn btn-gold-outline btn-sm" data-right="shading">Shading</button>
+      <button type="button" class="btn btn-gold-outline btn-sm" data-right="normals">Normals</button>
+      <button type="button" class="btn btn-gold-outline btn-sm" data-right="depth">Depth</button>
+    </span>
+  </div>
+  <p class="sim__readout"></p>
+</div>
+```
+
+Each of these passes is a perfect label for a perception task: depth estimation, surface normal estimation, segmentation. Real cameras never give us such labels, which is why simulators are so valuable.
+
+## Why rendering matters for perception
+
+Rendering connects to perception in at least three ways.
+
+- **Analysis by synthesis.** One way to understand an image is to search for the scene that, when rendered, reproduces it. Camera calibration, pose estimation and 3D reconstruction can all be framed this way, minimizing the difference between a rendered and an observed image.
+- **Simulation and synthetic data.** Robots can be trained and tested in simulated worlds long before they touch hardware, and every rendered image comes with exact depth, normals, segmentation and motion. The challenge is the **domain gap**: networks trained on synthetic images may fail on real ones unless the renders are realistic or deliberately varied.
+- **Neural rendering.** Recent methods such as neural radiance fields and Gaussian splatting learn a scene representation that can be rendered differentiably, so that the rendering equation itself becomes part of the learning loop. Later chapters build on the ideas in this one.
+
+### Try it in code
+
+The cell below evaluates a cubic Bezier curve with de Casteljau's algorithm and renders a Phong-shaded sphere pixel by pixel, the same computation as the shading figure above. Change the control points, the light direction or the shininess and press **Run Code**.
+
+```{pyodide}
+import numpy as np
+import matplotlib.pyplot as plt
+
+def de_casteljau(points, t):
+    """Evaluate a Bezier curve at t by repeated linear interpolation."""
+    pts = np.array(points, dtype=float)
+    while len(pts) > 1:
+        pts = (1 - t) * pts[:-1] + t * pts[1:]
+    return pts[0]
+
+control = [(0, 0), (1, 2.2), (3, -1.2), (4, 1)]
+curve = np.array([de_casteljau(control, t) for t in np.linspace(0, 1, 200)])
+
+# A Phong-shaded sphere, one normal per pixel
+n = 240
+y, x = np.mgrid[1:-1:n * 1j, -1:1:n * 1j]
+inside = x**2 + y**2 <= 1
+z = np.sqrt(np.clip(1 - x**2 - y**2, 0, None))
+N = np.dstack([x, y, z])
+L = np.array([-0.5, 0.6, 0.65]); L /= np.linalg.norm(L)
+V = np.array([0, 0, 1.0])
+ndl = N @ L
+R = 2 * ndl[..., None] * N - L
+ka, kd, ks, shininess = 0.1, 0.8, 0.5, 24
+I = ka + kd * np.clip(ndl, 0, None) + ks * np.clip(R @ V, 0, None) ** shininess * (ndl > 0)
+image = np.where(inside[..., None], np.clip(I[..., None] * [0.81, 0.73, 0.49], 0, 1), 0.1)
+
+fig, axes = plt.subplots(1, 2, figsize=(11, 4.2))
+axes[0].plot(*np.array(control).T, "o--", color="gray", label="control polygon")
+axes[0].plot(*curve.T, color="#b39a52", lw=3, label="Bezier curve")
+axes[0].set_aspect("equal"); axes[0].legend(); axes[0].set_title("de Casteljau")
+axes[1].imshow(image); axes[1].axis("off"); axes[1].set_title("Phong shading")
+plt.show()
+```
+
+::: {.callout-tip}
+## Exercise
+Change the sphere code to Blinn-Phong: compute the half vector $\mathbf{h} = (\mathbf{l} + \mathbf{v}) / \lVert \mathbf{l} + \mathbf{v} \rVert$ and replace $\mathbf{r} \cdot \mathbf{v}$ with $\mathbf{n} \cdot \mathbf{h}$. How must you change the shininess to get a highlight of similar size?
+:::
+
+## Summary
+
+- Curves can be implicit, $f(x, y) = 0$, which makes testing points easy, or parametric, $\mathbf{p}(t)$, which makes generating them easy.
+- Bezier curves blend control points with Bernstein polynomials. De Casteljau's algorithm evaluates and splits them by repeated linear interpolation, and they are affine invariant.
+- Splines join polynomial pieces with $C^0$, $C^1$ or $C^2$ continuity. B-splines offer local control.
+- Meshes approximate surfaces with triangles. Face normals give flat shading; interpolated vertex normals give smooth shading.
+- Rasterization projects triangles with the camera model and resolves visibility with a z-buffer, which is itself a depth map.
+- Lambert, Phong and Blinn-Phong models compute brightness from normals, lights and the view; normal maps fake detail.
+- Ray tracing follows light paths and estimates the rendering equation. Renderers produce perfect labels, which makes them central to simulation, synthetic data and neural rendering.
+
+::: {.callout-tip}
+## Exercises
+1. Show that a quadratic Bezier curve is a parabola. Where is its highest point if $\mathbf{P}_0 = (0, 0)$, $\mathbf{P}_1 = (1, 2)$, $\mathbf{P}_2 = (2, 0)$?
+2. Two cubic Bezier pieces meet at $\mathbf{P}_3$. What condition on $\mathbf{P}_2$, $\mathbf{P}_3$ and the next piece's $\mathbf{P}_1$ makes the join $C^1$?
+3. A z-buffer stores depth with 16 bits between a near plane at 0.1 m and a far plane at 100 m. If depth is stored linearly, what is the smallest depth difference it can tell apart? Why do real systems store $1/z$ instead?
+4. In the ray-casting figure, why does a shadow ray start slightly above the surface rather than exactly on it?
+:::
+
+```{=html}
+<script src="../demos/curves-rendering.js"></script>
+```
