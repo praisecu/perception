@@ -1,0 +1,45 @@
+<!doctype html>
+<html lang="en">
+<head>
+  <meta charset="utf-8">
+  <meta name="viewport" content="width=device-width, initial-scale=1">
+  <title>Perception | PRAISe Lab</title>
+  <meta name="description" content="An online book on perception for robots, from the PRAISe Lab at CU Boulder. Coming soon.">
+  <link rel="icon" href="logo.webp">
+  <link rel="preconnect" href="https://fonts.googleapis.com">
+  <link href="https://fonts.googleapis.com/css2?family=Nunito:wght@400;700;800&display=swap" rel="stylesheet">
+  <style>
+    :root { --bg: #f7f6f1; --ink: #1d1f1a; --muted: #5d6056; --gold: #8a6d1d; --line: #dcd8c8; }
+    @media (prefers-color-scheme: dark) {
+      :root { --bg: #11120f; --ink: #f2f0e8; --muted: #b3b2a8; --gold: #e2c46b; --line: #34362f; }
+    }
+    * { box-sizing: border-box; }
+    body {
+      margin: 0; min-height: 100vh; display: grid; place-items: center;
+      background: var(--bg); color: var(--ink);
+      font-family: "Nunito", system-ui, sans-serif; padding: 32px 16px;
+    }
+    main { max-width: 620px; text-align: center; }
+    img { width: 72px; height: 72px; object-fit: contain; }
+    .kicker {
+      display: inline-block; margin: 22px 0 10px; padding: 5px 14px;
+      border: 1px solid var(--line); border-radius: 999px;
+      color: var(--gold); font-size: 13px; font-weight: 800; letter-spacing: .12em; text-transform: uppercase;
+    }
+    h1 { margin: 0 0 14px; font-size: clamp(40px, 9vw, 64px); font-weight: 800; letter-spacing: -.02em; }
+    p { margin: 0 0 12px; color: var(--muted); font-size: 18px; line-height: 1.6; }
+    a { color: var(--gold); font-weight: 700; }
+    footer { margin-top: 30px; font-size: 14px; color: var(--muted); }
+  </style>
+</head>
+<body>
+  <main>
+    <img src="logo.webp" alt="PRAISe Lab logo">
+    <div class="kicker">Coming soon</div>
+    <h1>Perception</h1>
+    <p>An open online book on how robots see, sense and understand the world.</p>
+    <p>By Chahat Deep Singh and the PRAISe Lab at the University of Colorado Boulder.</p>
+    <footer><a href="https://www.praisecu.com/">praisecu.com</a></footer>
+  </main>
+</body>
+</html>
