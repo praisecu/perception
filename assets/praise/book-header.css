@@ -1,0 +1,43 @@
+/* Fit the praisecu.com header into the Quarto book layout. */
+
+.modern-header {
+  position: sticky;
+  top: 0;
+  z-index: 1040;
+}
+
+.modern-header a,
+.modern-header button {
+  background-image: none;
+}
+
+/* Quarto's own color switch is replaced by the site's switch. */
+.quarto-color-scheme-toggle {
+  display: none !important;
+}
+
+/* Wide equations scroll instead of widening the page on phones. */
+mjx-container[display="true"],
+.math.display {
+  display: block;
+  max-width: 100%;
+  overflow-x: auto;
+  overflow-y: hidden;
+}
+
+/* On phones the book's chapter bar sits just below the site header. */
+@media (max-width: 991.98px) {
+  #quarto-header {
+    position: sticky !important;
+    top: 59px;
+  }
+}
+
+/* Sidebars stick below the site header. */
+@media (min-width: 992px) {
+  #quarto-sidebar,
+  #quarto-margin-sidebar {
+    top: 74px !important;
+    max-height: calc(100vh - 74px) !important;
+  }
+}

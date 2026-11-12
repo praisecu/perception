@@ -118,6 +118,14 @@ h1.title, .quarto-title h1.title {
 }
 
 /* Chapter number as a small gold label above the title */
+.quarto-title h1.title .quarto-section-identifier {
+  font-size: 0;
+}
+
+.quarto-title h1.title .chapter-title {
+  font-size: clamp(2.2rem, 4vw, 3rem);
+}
+
 .quarto-title h1.title .chapter-number {
   display: block;
   margin-bottom: 0.35rem;
@@ -353,5 +361,34 @@ section#welcome > h1 {
 
   #quarto-header .navbar {
     min-height: 62px;
+  }
+
+  /* Keep menu, brand, tools and search on one row */
+  #quarto-header .navbar-container {
+    flex-wrap: nowrap;
+    gap: 6px;
+  }
+
+  #quarto-header .navbar-brand-container {
+    min-width: 0;
+    flex: 1 1 auto;
+    margin: 0 !important;
+  }
+
+  #quarto-header .navbar-brand {
+    min-width: 0;
+    gap: 8px;
+  }
+
+  #quarto-header .navbar-title {
+    overflow: hidden;
+    text-overflow: ellipsis;
+    white-space: nowrap;
+  }
+
+  #quarto-header .quarto-navbar-tools,
+  #quarto-header #quarto-search {
+    flex: 0 0 auto;
+    margin: 0;
   }
 }

@@ -1,0 +1,161 @@
+/* Theme toggle */
+
+.modern-header__inner {
+  position: relative;
+}
+
+/* Capsule theme toggle */
+
+.theme-toggle {
+  display: inline-flex;
+  align-items: center;
+  justify-content: center;
+  flex: 0 0 auto;
+
+  width: 68px;
+  height: 34px;
+  padding: 0;
+
+  background: transparent;
+  border: 0;
+  cursor: pointer;
+}
+
+.theme-toggle__track {
+  position: relative;
+
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+
+  width: 68px;
+  height: 34px;
+  padding: 0 8px;
+  overflow: hidden;
+
+  background: rgba(0, 0, 0, 0.28);
+  border: 1px solid rgba(207, 185, 125, 0.34);
+  border-radius: 999px;
+
+  transition:
+    background-color 180ms ease,
+    border-color 180ms ease;
+}
+
+.theme-toggle__icon {
+  position: relative;
+  z-index: 2;
+
+  width: 17px;
+  height: 17px;
+
+  fill: none;
+  stroke: currentColor;
+  stroke-width: 2.1;
+  stroke-linecap: round;
+  stroke-linejoin: round;
+
+  transition: color 180ms ease;
+}
+
+/*
+ * The active icon sits on the solid thumb and is drawn dark for
+ * contrast; the inactive one stays muted against the track.
+ */
+
+.theme-toggle__icon--sun {
+  color: #1d1e00;
+}
+
+.theme-toggle__icon--moon {
+  color: rgba(255, 255, 255, 0.38);
+}
+
+.theme-toggle__thumb {
+  position: absolute;
+  z-index: 1;
+  top: 2px;
+  left: 2px;
+
+  width: 28px;
+  height: 28px;
+
+  background: #cfb97d;
+  border: 1px solid #cfb97d;
+  border-radius: 50%;
+  box-shadow: 0 1px 4px rgba(0, 0, 0, 0.45);
+
+  transition: transform 180ms ease, background-color 180ms ease;
+}
+
+html[data-theme="dark"] .theme-toggle__thumb {
+  transform: translateX(34px);
+}
+
+html[data-theme="dark"] .theme-toggle__icon--sun {
+  color: rgba(255, 255, 255, 0.38);
+}
+
+html[data-theme="dark"] .theme-toggle__icon--moon {
+  color: #1d1e00;
+}
+
+.theme-toggle:hover .theme-toggle__track,
+.theme-toggle:focus-visible .theme-toggle__track {
+  background: rgba(255, 255, 255, 0.09);
+  border-color: rgba(207, 185, 125, 0.6);
+}
+
+.theme-toggle:focus-visible {
+  outline: 2px solid #cfb97d;
+  outline-offset: 3px;
+}
+
+.theme-toggle__label {
+  position: absolute;
+
+  overflow: hidden;
+  width: 1px;
+  height: 1px;
+  margin: -1px;
+  padding: 0;
+
+  border: 0;
+
+  clip: rect(0 0 0 0);
+  clip-path: inset(50%);
+  white-space: nowrap;
+}
+
+.theme-toggle--desktop {
+  margin-right: 3px;
+}
+
+.theme-toggle--mobile {
+  display: none;
+}
+
+@media (max-width: 900px) {
+  .theme-toggle--desktop {
+    display: none !important;
+  }
+
+  .theme-toggle--mobile {
+    position: absolute;
+    top: 50%;
+    right: 14px;
+    z-index: 2;
+
+    display: inline-flex;
+
+    transform: translateY(-50%);
+  }
+}
+
+@media (prefers-reduced-motion: reduce) {
+  .theme-toggle__track,
+  .theme-toggle__thumb,
+  .theme-toggle__icon {
+    transition: none;
+  }
+}
