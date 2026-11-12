@@ -19,8 +19,6 @@ book:
   search:
     location: sidebar
     type: overlay
-  page-footer:
-    center: "PRAISe Lab, University of Colorado Boulder · [praisecu.com](https://www.praisecu.com)"
 
 
   # The table of contents. Add, remove or reorder chapters here.
@@ -41,6 +39,7 @@ format:
     # The praisecu.com header (assets/praise/), shared with the lab site.
     include-in-header: assets/praise/head.html
     include-before-body: assets/praise/header.html
+    include-after-body: assets/praise/footer.html
     number-sections: true
     toc: true
     toc-title: "On this page"

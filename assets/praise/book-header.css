@@ -7,7 +7,8 @@
 }
 
 .modern-header a,
-.modern-header button {
+.modern-header button,
+.modern-footer a {
   background-image: none;
 }
 

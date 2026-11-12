@@ -18,6 +18,10 @@
 
   parts.reverse().forEach((part) => document.body.prepend(part));
 
+  // The site footer goes at the very end of the page.
+  const footer = document.querySelector("footer.modern-footer");
+  if (footer) document.body.append(footer);
+
   function currentScheme() {
     return document.body.classList.contains("quarto-dark") ? "dark" : "light";
   }

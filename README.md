@@ -33,5 +33,5 @@ Copy `_canny.qmd` and `canny.js` as a starting point and give the new demo its o
 
 ## Header
 
-The top bar and phone tab bar are copied from praisecu.com into `assets/praise/` (`header.html`, `modern-header.css`, `theme-toggle.css`, `modern-header.js`). If the lab site's header changes, copy the new versions here. `book-header.js` moves the header to the top of the page and connects the site's light/dark switch to the book.
+The top bar, phone tab bar and footer are copied from praisecu.com into `assets/praise/` (`header.html`, `footer.html`, `modern-header.css`, `modern-footer.css`, `theme-toggle.css`, `modern-header.js`). If the lab site's header changes, copy the new versions here. `book-header.js` moves the header to the top of the page and connects the site's light/dark switch to the book.
 
