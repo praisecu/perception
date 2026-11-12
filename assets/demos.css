@@ -316,3 +316,51 @@ main figure.clip-grid {
   gap: 0.5rem;
   margin-top: 0.75rem;
 }
+
+/* Small line drawings on the timeline cards */
+
+.timeline__icon {
+  float: left;
+  width: 64px;
+  height: 64px;
+  margin: 0.15rem 0.85rem 0.3rem 0;
+  padding: 6px;
+  border-radius: 12px;
+  background: rgba(207, 185, 125, 0.12);
+  fill: none;
+  stroke: #b39a52;
+  stroke-width: 2;
+  stroke-linecap: round;
+  stroke-linejoin: round;
+}
+
+.timeline__icon .f {
+  fill: rgba(207, 185, 125, 0.45);
+}
+
+.timeline__item:nth-child(odd) .timeline__icon {
+  float: right;
+  margin: 0.15rem 0 0.3rem 0.85rem;
+}
+
+.timeline__item::before {
+  display: table;
+  content: "";
+}
+
+.timeline__text::after {
+  display: block;
+  clear: both;
+  content: "";
+}
+
+html[data-theme="dark"] .timeline__icon {
+  stroke: #d6bd72;
+}
+
+@media (max-width: 700px) {
+  .timeline__item:nth-child(odd) .timeline__icon {
+    float: left;
+    margin: 0.15rem 0.85rem 0.3rem 0;
+  }
+}
