@@ -1,45 +1,212 @@
 /*
- * Fonts and colors from praisecu.com: Nunito Sans headings, Open Sans
- * body text, CU gold accents on a near-black or white page.
+ * Fonts, header and accents from praisecu.com: Nunito Sans headings,
+ * Open Sans body text, CU gold on a near-black header bar.
+ * Page colors for each mode live in book-light.scss and book-dark.scss.
  */
 
 /*-- scss:defaults --*/
 $font-family-sans-serif: "Open Sans", Arial, Helvetica, sans-serif;
 $headings-font-family: "Nunito Sans", Nunito, sans-serif;
-$headings-font-weight: 600;
-$font-size-root: 16px;
-$line-height-base: 1.7;
+$headings-font-weight: 700;
+$font-size-root: 17px;
+$line-height-base: 1.75;
+$border-radius: 10px;
+$border-radius-lg: 14px;
 
+// The praisecu.com header bar is dark in both modes.
+$navbar-bg: #050600;
+$navbar-fg: rgba(255, 255, 255, 0.9);
+$navbar-hl: #cfb97d;
+
+$gold: #cfb97d;
 
 /*-- scss:rules --*/
-@import url("https://fonts.googleapis.com/css2?family=Nunito+Sans:wght@300;400;600;700;800&family=Open+Sans:wght@400;600;700&display=swap");
+@import url("https://fonts.googleapis.com/css2?family=Nunito+Sans:wght@400;500;600;700;800&family=Open+Sans:wght@400;600;700&display=swap");
 
-h1, h2, h3, h4, .title, .quarto-title .title {
+/* ---------- Header, as on praisecu.com ---------- */
+
+#quarto-header .navbar {
+  min-height: 74px;
+  background: rgba(5, 6, 0, 0.94) !important;
+  border-bottom: 1px solid rgba(207, 185, 125, 0.16);
+  backdrop-filter: blur(14px);
   font-family: $headings-font-family;
-  font-weight: 600;
+}
+
+#quarto-header .navbar-brand {
+  gap: 14px;
+}
+
+#quarto-header .navbar-logo {
+  max-height: 44px;
+  width: auto;
+}
+
+#quarto-header .navbar-title {
+  color: $gold !important;
+  font-size: 1.85rem;
+  font-weight: 700;
   letter-spacing: -0.02em;
 }
 
-h1.title, .quarto-title h1 {
-  font-size: 2.4rem;
+#quarto-header .navbar-brand:hover .navbar-title {
+  color: #fff !important;
+}
+
+#quarto-header .nav-link {
+  border-radius: 9px;
+  padding: 0.5rem 0.8rem !important;
+  color: rgba(255, 255, 255, 0.9) !important;
+  font-size: 1.1rem;
+  font-weight: 500;
+  transition: background 160ms ease, color 160ms ease, transform 160ms ease;
+}
+
+#quarto-header .nav-link:hover,
+#quarto-header .nav-link:focus-visible,
+#quarto-header .nav-link.show {
+  background: rgba(207, 185, 125, 0.1);
+  color: $gold !important;
+  transform: translateY(-1px);
+}
+
+#quarto-header .dropdown-menu {
+  padding: 8px;
+  background: rgba(14, 15, 10, 0.97);
+  border: 1px solid rgba(207, 185, 125, 0.22);
+  border-radius: 13px;
+  box-shadow: 0 22px 55px rgba(0, 0, 0, 0.28);
+}
+
+#quarto-header .dropdown-item {
+  border-radius: 8px;
+  padding: 0.6rem 0.8rem;
+  color: #fff;
+  font-family: $headings-font-family;
+  font-weight: 500;
+}
+
+#quarto-header .dropdown-item:hover,
+#quarto-header .dropdown-item:focus {
+  background: rgba(207, 185, 125, 0.1);
+  color: $gold;
+}
+
+#quarto-header .quarto-color-scheme-toggle,
+#quarto-header .quarto-navigation-tool,
+#quarto-header #quarto-search .aa-DetachedSearchButton {
+  color: $gold !important;
+}
+
+#quarto-header .navbar-toggler {
+  border: 1px solid rgba(207, 185, 125, 0.45);
+  border-radius: 9px;
+}
+
+/* ---------- Typography ---------- */
+
+h1, h2, h3, h4, h5, .title {
+  font-family: $headings-font-family;
+  letter-spacing: -0.02em;
+}
+
+h1.title, .quarto-title h1.title {
+  font-size: clamp(2.2rem, 4vw, 3rem);
+  font-weight: 800;
+  line-height: 1.12;
+  margin-bottom: 0.4rem;
+}
+
+/* Chapter number as a small gold label above the title */
+.quarto-title h1.title .chapter-number {
+  display: block;
+  margin-bottom: 0.35rem;
+  color: $gold;
+  font-size: 0.95rem;
+  font-weight: 800;
+  letter-spacing: 0.14em;
+  text-transform: uppercase;
+}
+
+.quarto-title h1.title .chapter-number::before {
+  content: "Chapter ";
+}
+
+h2 {
+  margin-top: 2.6rem;
+  padding-bottom: 0.4rem;
+  font-size: 1.65rem;
+  border-bottom: 0 !important;
+}
+
+h2 .header-section-number,
+h3 .header-section-number {
+  color: $gold;
+  font-weight: 800;
+  margin-right: 0.25rem;
 }
 
 a {
   font-weight: 600;
-  text-decoration-thickness: 1px;
-  text-underline-offset: 3px;
+  text-decoration: none;
+  background-image: linear-gradient(currentColor, currentColor);
+  background-size: 0% 1.5px;
+  background-position: 0 100%;
+  background-repeat: no-repeat;
+  transition: background-size 180ms ease;
 }
 
-/* Sidebar and navigation in the site's heading font */
-.sidebar, .sidebar-title, .sidebar-item, #TOC, .nav-page {
+main a:hover {
+  background-size: 100% 1.5px;
+}
+
+/* ---------- Sidebar ---------- */
+
+#quarto-sidebar {
   font-family: $headings-font-family;
 }
 
-.sidebar-title a {
-  font-weight: 800;
+.sidebar-title {
+  font-size: 1.35rem !important;
+  font-weight: 800 !important;
+  letter-spacing: -0.02em;
 }
 
-/* Buttons and pills like the lab site's gold buttons */
+.sidebar-item-section > .sidebar-item-container .sidebar-item-text {
+  font-size: 0.78rem;
+  font-weight: 800;
+  letter-spacing: 0.12em;
+  text-transform: uppercase;
+  opacity: 0.7;
+}
+
+.sidebar-navigation .sidebar-link {
+  border-radius: 8px;
+  padding: 0.35rem 0.6rem;
+  transition: background 150ms ease;
+}
+
+.sidebar-navigation .sidebar-link:hover {
+  background: rgba(207, 185, 125, 0.12);
+}
+
+.sidebar-navigation .sidebar-link.active {
+  background: rgba(207, 185, 125, 0.16);
+  font-weight: 700;
+}
+
+/* ---------- Content blocks ---------- */
+
+.callout {
+  border-radius: 14px !important;
+  border-left-width: 4px !important;
+  overflow: hidden;
+}
+
+div.sourceCode, pre {
+  border-radius: 12px !important;
+}
+
 .btn-primary {
   background: #343607;
   border: 1px solid #a79047;
@@ -51,10 +218,140 @@ a {
 .btn-primary:hover,
 .btn-primary:focus {
   background: #4f4604;
-  border-color: #cfb97d;
+  border-color: $gold;
   color: #fff3c8;
 }
 
-.callout {
+.nav-page {
   border-radius: 12px;
+}
+
+/* Previous and next chapter links as cards */
+.page-navigation .nav-page a {
+  display: block;
+  padding: 0.9rem 1.1rem;
+  border: 1px solid rgba(207, 185, 125, 0.3);
+  border-radius: 12px;
+  background-image: none;
+  transition: border-color 150ms ease, transform 150ms ease;
+}
+
+.page-navigation .nav-page a:hover {
+  border-color: $gold;
+  transform: translateY(-1px);
+}
+
+/* ---------- Front page ---------- */
+
+.book-hero {
+  margin: 0.5rem 0 2.2rem;
+}
+
+.book-hero__kicker {
+  display: inline-block;
+  padding: 0.3rem 0.9rem;
+  border: 1px solid rgba(207, 185, 125, 0.45);
+  border-radius: 999px;
+  color: $gold;
+  font-family: $headings-font-family;
+  font-size: 0.8rem;
+  font-weight: 800;
+  letter-spacing: 0.14em;
+  text-transform: uppercase;
+}
+
+.book-hero__lead {
+  margin: 1rem 0 1.4rem;
+  font-size: 1.25rem;
+  line-height: 1.6;
+}
+
+.book-hero__actions {
+  display: flex;
+  flex-wrap: wrap;
+  gap: 0.75rem;
+}
+
+.book-hero__actions a {
+  background-image: none;
+}
+
+.book-cards {
+  display: grid;
+  grid-template-columns: repeat(auto-fill, minmax(230px, 1fr));
+  gap: 1rem;
+  margin: 1.2rem 0 2rem;
+}
+
+.book-card {
+  display: block;
+  padding: 1.1rem 1.2rem;
+  border: 1px solid rgba(207, 185, 125, 0.28);
+  border-radius: 14px;
+  background-image: none !important;
+  transition: border-color 150ms ease, transform 150ms ease, box-shadow 150ms ease;
+}
+
+.book-card:hover {
+  border-color: $gold;
+  transform: translateY(-2px);
+  box-shadow: 0 12px 28px rgba(0, 0, 0, 0.12);
+}
+
+.book-card__label {
+  display: block;
+  color: $gold;
+  font-family: $headings-font-family;
+  font-size: 0.78rem;
+  font-weight: 800;
+  letter-spacing: 0.12em;
+  text-transform: uppercase;
+}
+
+.book-card__title {
+  display: block;
+  margin: 0.2rem 0 0.35rem;
+  font-family: $headings-font-family;
+  font-size: 1.2rem;
+  font-weight: 700;
+}
+
+.book-card__text {
+  display: block;
+  font-size: 0.95rem;
+  font-weight: 400;
+  opacity: 0.8;
+}
+
+.btn-gold-outline {
+  border: 1px solid rgba(207, 185, 125, 0.55);
+  border-radius: 10px;
+  color: $gold;
+  font-weight: 600;
+}
+
+.btn-gold-outline:hover,
+.btn-gold-outline:focus {
+  background: rgba(207, 185, 125, 0.12);
+  border-color: $gold;
+  color: $gold;
+}
+
+/* The front page's "Welcome" heading only names it in the sidebar. */
+section#welcome > h1 {
+  display: none;
+}
+
+@media (max-width: 991.98px) {
+  #quarto-header .navbar-title {
+    font-size: 1.35rem;
+  }
+
+  #quarto-header .navbar-logo {
+    max-height: 36px;
+  }
+
+  #quarto-header .navbar {
+    min-height: 62px;
+  }
 }

@@ -14,9 +14,36 @@ book:
   repo-url: https://github.com/praisecu/perception
   repo-actions: [edit, issue]
   favicon: logo.webp
-  search: true
+  search:
+    location: navbar
+    type: overlay
   page-footer:
     center: "PRAISe Lab, University of Colorado Boulder · [praisecu.com](https://www.praisecu.com)"
+
+  # The praisecu.com header, with the same links.
+  navbar:
+    logo: assets/cu-logo.webp
+    logo-alt: "University of Colorado Boulder"
+    logo-href: https://www.praisecu.com
+    title: "PRAISe Lab"
+    href: https://www.praisecu.com
+    right:
+      - text: Research
+        menu:
+          - text: Publications
+            href: https://www.praisecu.com/publications.html
+          - text: Research Areas
+            href: https://www.praisecu.com/research-areas.html
+          - text: Blog
+            href: https://www.praisecu.com/blog/
+      - text: Teaching
+        href: https://www.praisecu.com/teaching.html
+      - text: Team
+        href: https://www.praisecu.com/team.html
+      - text: Media
+        href: https://www.praisecu.com/media.html
+      - text: Openings
+        href: https://www.praisecu.com/openings.html
 
   # The table of contents. Add, remove or reorder chapters here.
   chapters:
@@ -35,4 +62,6 @@ format:
     css: assets/demos.css
     number-sections: true
     toc: true
+    toc-title: "On this page"
     code-copy: true
+    smooth-scroll: true

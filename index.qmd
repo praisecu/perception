@@ -1,11 +1,31 @@
-# Preface {.unnumbered}
+# Welcome {.unnumbered}
 
-This is an open online book on perception: how robots, from tiny drones to autonomous vehicles, turn light and other signals into an understanding of the world around them.
+::: {.book-hero}
+[Open online book]{.book-hero__kicker}
 
-It is written for students meeting computer vision and robot perception for the first time, and it is built to be used, not just read. Many chapters contain:
+[How robots, from tiny drones to autonomous vehicles, turn light and other signals into an understanding of the world around them.]{.book-hero__lead}
 
-- **Live demos** that run OpenCV on your own webcam, directly in the browser. Video is processed on your device and never uploaded.
-- **Editable code** you can change and run in the page, with no installation.
+::: {.book-hero__actions}
+[Start reading](chapters/images.qmd){.btn .btn-primary}
+[PRAISe Lab](https://www.praisecu.com){.btn .btn-gold-outline}
+:::
+:::
+
+This book is written for students meeting computer vision and robot perception for the first time. It is built to be used, not just read.
+
+::: {.book-cards}
+[[Live demos]{.book-card__label}[Run OpenCV on your webcam]{.book-card__title}[Demos run in your browser. Video stays on your device and is never uploaded.]{.book-card__text}](chapters/edges.qmd){.book-card}
+
+[[Editable code]{.book-card__label}[Change it and press Run]{.book-card__title}[Real Python and OpenCV in the page, with nothing to install.]{.book-card__text}](chapters/images.qmd){.book-card}
+:::
+
+## Chapters {.unnumbered}
+
+::: {.book-cards}
+[[Chapter 1]{.book-card__label}[Images as Data]{.book-card__title}[Pixels, channels and color, with editable OpenCV code.]{.book-card__text}](chapters/images.qmd){.book-card}
+
+[[Chapter 2]{.book-card__label}[Edges]{.book-card__title}[Gradients and the Canny detector, live on your camera.]{.book-card__text}](chapters/edges.qmd){.book-card}
+:::
 
 ::: {.callout-note}
 ## Work in progress
