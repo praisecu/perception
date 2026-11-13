@@ -131,7 +131,7 @@ h1.title, .quarto-title h1.title {
 
 .quarto-title h1.title .chapter-number {
   display: block;
-  margin-bottom: 0.35rem;
+  margin-bottom: 0.7rem;
   color: $gold;
   font-size: 0.95rem;
   font-weight: 800;
@@ -141,6 +141,17 @@ h1.title, .quarto-title h1.title {
 
 .quarto-title h1.title .chapter-number::before {
   content: "Chapter ";
+}
+
+/* Breathing room between the chapter bar and the chapter title */
+#title-block-header {
+  margin-top: 1.6rem;
+}
+@media (min-width: 992px) {
+  #title-block-header { margin-top: 0.6rem; }
+}
+.quarto-title-breadcrumbs {
+  margin-bottom: 1.4rem;
 }
 
 h2 {
