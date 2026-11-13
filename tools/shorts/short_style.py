@@ -129,12 +129,8 @@ def pill(s, color=None, text_color=None, size=34, font=None, outline=False):
 
 
 def header_bar():
-    """The praisecu.com header: black bar, CU logo, gold PRAISe Lab, hairline."""
-    bar = Rectangle(width=config.frame_width + 0.1, height=1.25).set_fill(HEAD_BG, 0.97).set_stroke(width=0)
-    bar.to_edge(UP, buff=0)
-    line = Line(bar.get_corner(DL), bar.get_corner(DR)).set_stroke(GOLD, 2, 0.25)
-    brand = brand_row(40).move_to(bar).to_edge(LEFT, buff=0.45)
-    return Group(bar, line, brand)
+    """Small CU logo and gold PRAISe Lab in the top right corner."""
+    return brand_row(26).to_corner(UR, buff=0.35)
 
 
 def card(w, h):
@@ -224,10 +220,10 @@ def play_end_card(scene, chapter_label, hold=1.8):
             t.scale_to_fit_width(8.2)
     rule = Line(LEFT * 1.6, RIGHT * 1.6).set_stroke(GOLD, 3, 0.6)
     e3 = body(chapter_label, 40, BODY)
-    b1 = pill("Read the book", size=36)
-    b2 = pill("perception.praisecu.com", size=34, outline=True)
+    b1 = body("Read more at", 36, BODY)
+    b2 = pill("perception.praisecu.com", size=36)
     VGroup(e0, e1, e2, rule, e3, b1, b2).arrange(DOWN, buff=0.4).move_to(DOWN * 0.2)
-    rule.shift(DOWN * 0.1); e3.shift(DOWN * 0.15); b1.shift(DOWN * 0.45); b2.shift(DOWN * 0.45)
+    rule.shift(DOWN * 0.1); e3.shift(DOWN * 0.15); b1.shift(DOWN * 0.5); b2.shift(DOWN * 0.45)
     scene.play(FadeIn(e0, shift=UP * 0.2), FadeIn(VGroup(e1, e2), shift=UP * 0.3), run_time=0.7)
     scene.play(Create(rule), FadeIn(e3, shift=UP * 0.2), run_time=0.5)
     scene.play(FadeIn(b1, shift=UP * 0.2), FadeIn(b2, shift=UP * 0.2), run_time=0.5)

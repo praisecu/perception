@@ -81,8 +81,11 @@ class Seeing(Scene):
         x0, y0, n, cell = 832, 352, 6, 9
         patch = self.box_on(img, x0, y0, x0 + n * cell, y0 + n * cell, GOLD, 5)
         cap2 = say("The robot sees...", 52).move_to(cap1)
-        self.play(Create(patch), FadeOut(cap1, shift=UP * 0.2), run_time=0.6)
-        self.play(Write(cap2), run_time=0.6)
+        img_g = ImageMobject(str(ASSETS / "scene_gray.jpg")).set_width(img.width).move_to(img)
+        g_p = pill("grayscale", size=34).move_to(cap1)
+        self.play(FadeIn(img_g), FadeIn(g_p, shift=UP * 0.15), FadeOut(cap1, shift=UP * 0.2), run_time=0.6)
+        self.play(Create(patch), run_time=0.5)
+        self.play(FadeOut(g_p, run_time=0.25), Write(cap2), run_time=0.6)
 
         g = np.asarray(Image.open(SCENE).convert("L"), dtype=float)
         vals = [[int(g[y0 + r * cell:y0 + (r + 1) * cell, x0 + c * cell:x0 + (c + 1) * cell].mean())
@@ -99,14 +102,16 @@ class Seeing(Scene):
             sq_num[1].move_to(sq_num[0])
         seed = patch.copy()
         self.play(
-            img.animate.set_opacity(0.0), frame.animate.set_stroke(opacity=0.0),
+            img.animate.set_opacity(0.0), FadeOut(img_g), frame.animate.set_stroke(opacity=0.0),
             FadeOut(cone), FadeOut(cam), FadeOut(lab1),
             ReplacementTransform(seed, cells), FadeOut(patch),
             run_time=1.0,
         )
         p = pill("just numbers", size=46).next_to(cells, UP, buff=0.5)
         self.play(FadeIn(p, scale=0.8), cap2.animate.next_to(p, UP, buff=0.35), run_time=0.5)
-        self.until(S[4])
+        self.until(S[4] + 0.3)
+        self.play(LaggedStart(*[Indicate(c[1], color=GOLD, scale_factor=1.25) for c in cells[::5]], lag_ratio=0.12), run_time=1.6)
+        self.until(S[4] + 3.4)
         bar = Rectangle(width=7.08, height=0.5).set_stroke(INK, 2)
         bar.set_fill(color=[BLACK, WHITE], opacity=1)
         bar.set_sheen_direction(RIGHT)
@@ -114,19 +119,56 @@ class Seeing(Scene):
         b0 = mono("0 · black", 28, INK).next_to(bar, DOWN, buff=0.2).align_to(bar, LEFT)
         b1 = mono("255 · white", 28, INK).next_to(bar, DOWN, buff=0.2).align_to(bar, RIGHT)
         blab = body("Each pixel is one brightness value", 34).next_to(b0, DOWN, buff=0.35).set_x(0)
-        self.play(FadeIn(bar), FadeIn(b0), FadeIn(b1), FadeIn(blab, shift=UP * 0.2), run_time=0.7)
-        self.play(LaggedStart(*[Indicate(c[1], color=GOLD, scale_factor=1.25) for c in cells[::5]], lag_ratio=0.12), run_time=1.6)
-        self.until(B[3] - 0.7)
+        self.play(FadeIn(bar), FadeIn(b0), FadeIn(blab, shift=UP * 0.2), run_time=0.6)
+        self.until(S[4] + 5.5)
+        self.play(FadeIn(b1, shift=UP * 0.1), run_time=0.4)
+        self.until(B[3] - 0.6)
 
-        # ---------- Beat 3: how many numbers (14 to 21 s) ----------
-        self.play(FadeOut(VGroup(cap2, p, bar, b0, b1, blab)), cells.animate.scale(0.42).move_to(UP * 4.6), run_time=0.7)
+        # ---------- Colour: three grids, red, green, blue ----------
+        rgb = np.asarray(Image.open(SCENE).convert("RGB"), dtype=float)
+        tints = {"R": (1, 0, 0), "G": (0, 1, 0), "B": (0, 0, 1)}
+        lab_col = {"R": "#ff7a6e", "G": "#7fdc86", "B": "#7fb2ff"}
+        layers = {}
+        for ch, k_ in (("B", 2), ("G", 1), ("R", 0)):
+            lay = VGroup()
+            for r in range(n):
+                for c in range(n):
+                    v = int(rgb[y0 + r * cell:y0 + (r + 1) * cell, x0 + c * cell:x0 + (c + 1) * cell, k_].mean())
+                    col = rgb_to_color([t * v / 255 for t in tints[ch]])
+                    sq = Square(0.95).set_stroke("#2c2b28", 2).set_fill(col, 1)
+                    lay.add(VGroup(sq, mono(str(v), 26, "#111111" if v > 150 else INK).move_to(sq)))
+            lay.arrange_in_grid(n, n, buff=0)
+            for sq_num in lay:
+                sq_num[1].move_to(sq_num[0])
+            layers[ch] = lay
+        layers["G"].shift(UR * 0.5); layers["B"].shift(UR * 1.0)
+        stack = VGroup(layers["B"], layers["G"], layers["R"]).move_to(DOWN * 0.4)
+        tags_rgb = VGroup(*[mono(ch, 36, lab_col[ch]).next_to(layers[ch].get_corner(UL), LEFT, buff=0.2).shift(DOWN * 0.28)
+                            for ch in ("R", "G", "B")])
+        c_cap = say("A colour image is three grids", 50).move_to(UP * 5.0)
+        fit(c_cap, 8.4)
+        c_sub = mono("red · green · blue, each 0 to 255", 32, INK).next_to(c_cap, DOWN, buff=0.3)
+        self.play(FadeOut(VGroup(cap2, p, bar, b0, b1, blab, cells)),
+                  FadeIn(layers["B"], shift=DL * 0.3), FadeIn(layers["G"], shift=DL * 0.3), FadeIn(layers["R"], shift=DL * 0.3),
+                  FadeIn(c_cap, shift=UP * 0.2), run_time=0.9)
+        self.play(FadeIn(tags_rgb), FadeIn(c_sub, shift=UP * 0.15), run_time=0.5)
+        i_px = 14
+        px_box = SurroundingRectangle(layers["R"][i_px], color=GOLD, buff=0.02, stroke_width=6)
+        rv, gv, bv = (layers[ch][i_px][1].text for ch in ("R", "G", "B"))
+        px_t = mono(f"one pixel = ({rv}, {gv}, {bv})", 34, GOLD).next_to(stack, DOWN, buff=0.5)
+        self.play(Create(px_box), FadeIn(px_t, shift=UP * 0.15), run_time=0.6)
+        self.until(S[5] + 1.6)
+
+        # ---------- Beat 3: how many numbers ----------
+        cells = VGroup(stack, tags_rgb)
+        self.play(FadeOut(VGroup(c_cap, c_sub, px_box, px_t)), cells.animate.scale(0.42).move_to(UP * 4.6), run_time=0.6)
         l1 = mono("1920 × 1080 pixels × 3 colors", 34, INK)
         v1 = ValueTracker(0)
         n1_lab = body("numbers in one frame", 40)
         grp1 = VGroup(l1, title("0", 100, GOLD), n1_lab).arrange(DOWN, buff=0.35).move_to(UP * 1.4)
         n1 = fast_counter(v1, 100, GOLD, grp1[1].get_center())
         self.play(FadeIn(l1, shift=UP * 0.2), FadeIn(n1), run_time=0.4)
-        self.play(v1.animate.set_value(6220800), Write(n1_lab), run_time=2.0, rate_func=rate_functions.ease_out_cubic)
+        self.play(v1.animate.set_value(6220800), Write(n1_lab), run_time=1.6, rate_func=rate_functions.ease_out_cubic)
         self.until(S[6])
         l2 = mono("× 30 frames every second", 34, INK)
         v2 = ValueTracker(0)
@@ -170,7 +212,7 @@ class Seeing(Scene):
         for i, (bx, word) in enumerate(boxes):
             t = pill(f"drone · {word}", size=26)
             if i == 1:
-                t.next_to(bx, DOWN, buff=0.08).align_to(bx, RIGHT)
+                t.next_to(bx, DOWN, buff=0.1).align_to(bx, LEFT)
             else:
                 t.next_to(bx, UP, buff=0.08).align_to(bx, LEFT)
             tags.add(t)
@@ -212,24 +254,24 @@ class Seeing(Scene):
         h1 = say("Without perception, a robot", 50).move_to(UP * 5.2)
         h1.scale_to_fit_width(min(h1.width, 8.0))
         h2 = title("can't act.", 92, GOLD).next_to(h1, DOWN, buff=0.35)
-        wall_l = rough_box(3.0, 1.0, INK, 5, radius=0.08, fill="#3a3832", fill_opacity=1).move_to([-2.9, -0.4, 0])
-        wall_r = rough_box(3.0, 1.0, INK, 5, radius=0.08, fill="#3a3832", fill_opacity=1).move_to([2.9, -0.4, 0])
+        wall_l = rough_box(2.6, 1.0, INK, 5, radius=0.08, fill="#3a3832", fill_opacity=1).move_to([-2.15, -0.4, 0])
+        wall_r = rough_box(2.6, 1.0, INK, 5, radius=0.08, fill="#3a3832", fill_opacity=1).move_to([2.15, -0.4, 0])
         for w in (wall_l, wall_r):
             hatch = VGroup(*[Line([x, -0.85, 0], [x + 0.5, 0.05, 0]).set_stroke(MUTED, 2, 0.6)
-                             for x in np.arange(-1.3, 1.0, 0.38)]).move_to(w)
+                             for x in np.arange(-1.1, 0.8, 0.38)]).move_to(w)
             w.add(hatch)
-        gap_lab = mono("gap", 30, MUTED).next_to(VGroup(wall_l, wall_r), DOWN, buff=0.25)
+        gap_lab = mono("gap", 30, MUTED).move_to([0, wall_l.get_y(), 0])
         drone = drone_doodle(0.75).move_to(DOWN * 5.2)
         self.play(Write(h1), Create(wall_l), Create(wall_r), FadeIn(gap_lab), FadeIn(drone, shift=UP * 0.3), run_time=1.0)
         eye = VGroup(*[DashedLine(drone.get_top(), p, dash_length=0.12).set_stroke(GOLD, 3)
                        for p in (wall_l.get_corner(DR), wall_r.get_corner(DL))])
         self.play(Create(eye), run_time=0.5)
-        self.play(FadeOut(eye), drone.animate.move_to(UP * 3.0), run_time=2.2, rate_func=rate_functions.ease_in_out_sine)
+        self.play(FadeOut(eye), FadeOut(gap_lab, run_time=0.4), drone.animate.move_to(UP * 3.0), run_time=2.2, rate_func=rate_functions.ease_in_out_sine)
         self.play(Write(h2), drone.animate.move_to(UP * 9.5), run_time=1.2, rate_func=rate_functions.ease_in_sine)
         steps2 = VGroup(hand("see", 50), hand("understand", 50), hand("act", 50, GOLD)).arrange(RIGHT, buff=1.0).move_to(DOWN * 3.4)
         ar = VGroup(rough_arrow(steps2[0].get_right() + RIGHT * 0.12, steps2[1].get_left() + LEFT * 0.12),
                     rough_arrow(steps2[1].get_right() + RIGHT * 0.12, steps2[2].get_left() + LEFT * 0.12))
-        self.play(FadeOut(gap_lab), LaggedStart(Write(steps2[0]), Create(ar[0]), Write(steps2[1]), Create(ar[1]), Write(steps2[2]), lag_ratio=0.3), run_time=1.3)
+        self.play(LaggedStart(Write(steps2[0]), Create(ar[0]), Write(steps2[1]), Create(ar[1]), Write(steps2[2]), lag_ratio=0.3), run_time=1.3)
         self.until(B[8] - 0.5)
 
         # ---------- End card (39 to 42 s) ----------
@@ -242,10 +284,10 @@ class Seeing(Scene):
                 t.scale_to_fit_width(8.2)
         rule = Line(LEFT * 1.6, RIGHT * 1.6).set_stroke(GOLD, 3, 0.6)
         e3 = body("Chapter 1 · Introduction", 40, BODY)
-        b1 = pill("Read the book", size=36)
-        b2 = pill("perception.praisecu.com", size=34, outline=True)
+        b1 = body("Read more at", 36, BODY)
+        b2 = pill("perception.praisecu.com", size=36)
         end = VGroup(e0, e1, e2, rule, e3, b1, b2).arrange(DOWN, buff=0.4).move_to(DOWN * 0.2)
-        rule.shift(DOWN * 0.1); e3.shift(DOWN * 0.15); b1.shift(DOWN * 0.45); b2.shift(DOWN * 0.45)
+        rule.shift(DOWN * 0.1); e3.shift(DOWN * 0.15); b1.shift(DOWN * 0.5); b2.shift(DOWN * 0.45)
         self.play(FadeIn(e0, shift=UP * 0.2), FadeIn(VGroup(e1, e2), shift=UP * 0.3), run_time=0.7)
         self.play(Create(rule), FadeIn(e3, shift=UP * 0.2), run_time=0.5)
         self.play(FadeIn(b1, shift=UP * 0.2), FadeIn(b2, shift=UP * 0.2), run_time=0.5)
