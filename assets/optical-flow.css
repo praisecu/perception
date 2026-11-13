@@ -123,3 +123,28 @@ main figure.clip-grid.of-clips {
     grid-template-columns: 1fr;
   }
 }
+
+/* Flow animations from the PRAISe Lab blog, with light and dark versions. */
+main .of-dark { display: none !important; }
+html[data-theme="dark"] main .of-light,
+body.quarto-dark main .of-light { display: none !important; }
+html[data-theme="dark"] main .of-dark,
+body.quarto-dark main .of-dark { display: block !important; }
+
+main .of-figure video { width: 100%; height: auto; border-radius: 12px; display: block; }
+
+main .of-flowgrid {
+  display: grid;
+  grid-template-columns: repeat(3, minmax(0, 1fr));
+  gap: 14px;
+  margin: 1.2rem 0 1.6rem;
+}
+main .of-flowgrid figure { margin: 0; }
+main .of-flowgrid video {
+  width: 100%; height: auto; aspect-ratio: 8 / 7; object-fit: contain;
+  border-radius: 12px; display: block;
+}
+main .of-flowgrid figcaption { font-size: 0.85rem; margin-top: 0.4rem; }
+@media (max-width: 640px) {
+  main .of-flowgrid { grid-template-columns: 1fr; }
+}

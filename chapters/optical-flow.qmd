@@ -18,6 +18,13 @@ Every chapter so far has treated images one at a time, or as a few snapshots tak
 
 The 2D pattern of apparent motion in an image is called **optical flow**. It is one of the oldest ideas in computer vision and one of the most useful on small robots, because it can be computed from two frames with very little memory and no map. Insects rely on it to fly through clutter, and so does the optical mouse on your desk. In @sec-stereo we matched points between two cameras placed side by side; here the two images come from one camera at two instants, and the match can be any small displacement, not just one along an epipolar line.
 
+```{=html}
+<figure class="of-figure">
+  <video src="media/optical-flow/street-flow.mp4" autoplay muted loop playsinline preload="metadata" aria-label="A camera drives down a snowy street towards oncoming vintage cars. Left: dense motion field in color. Right: the scene with flow arrows."></video>
+  <figcaption>Motion field of a street scene rendered in Blender Cycles, from the <a href="https://www.praisecu.com/blog/optical-flow/">PRAISe Lab blog</a>. Left: dense flow, colored by direction. Right: sparse arrows. Scene: <a href="https://www.blenderkit.com/asset-gallery-detail/60458356-c249-4945-908a-474e925bad16/" target="_blank" rel="noopener">1920s Winter City Street</a> by Joyble, via BlenderKit.</figcaption>
+</figure>
+```
+
 ::: {.callout-note appearance="simple"}
 **In this chapter.** Motion field versus optical flow · the aperture problem · brightness constancy and the optical flow constraint · Lucas-Kanade and the structure tensor · coarse-to-fine pyramids · Horn-Schunck · measuring and showing flow · the motion field of a moving camera · focus of expansion and time to contact · scene flow · flow in robots and in nature · learned optical flow · flow on tiny robots.
 :::
@@ -45,6 +52,16 @@ The figure below shows a sphere and two sets of arrows. Gold arrows on the left 
 ```
 
 The plain spinning sphere has a motion field but no optical flow: its image never changes. The still sphere under a moving light has no motion field, yet its shading slides across the image and produces optical flow. Shadows, reflections and flickering lights cause the same mismatch in real scenes. For textured, matte, steadily lit surfaces, which describe most of the world most of the time, optical flow is an excellent observable stand-in for the motion field, and the rest of this chapter relies on that.
+
+The same effect in a path-traced render: both balls spin at the same rate, so their motion fields are identical, but only the dimpled golf ball produces optical flow.
+
+```{=html}
+<figure class="of-figure">
+  <video class="of-light" src="media/optical-flow/rotating-spheres.mp4" autoplay muted loop playsinline preload="metadata" aria-label="A rotating golf ball with visible dimples next to a rotating uniform sphere that looks unchanged"></video>
+  <video class="of-dark" src="media/optical-flow/rotating-spheres-dark.mp4" autoplay muted loop playsinline preload="metadata" aria-hidden="true"></video>
+  <figcaption>Motion without flow, rendered in Blender Cycles. The motion field is the same for both spheres; the uniform sphere has no optical flow.</figcaption>
+</figure>
+```
 
 Optical flow is usually stored as an image of 2D vectors $(u, v)$, one per pixel, giving the displacement in pixels from frame $t$ to frame $t+1$.
 
@@ -393,6 +410,64 @@ Two facts in this equation shape everything that follows.
 
 1. **The rotational part does not depend on depth.** A camera that only rotates sees the same flow whatever the scene looks like. Pure rotation tells us nothing about the 3D structure, just as a pure rotation gave no stereo baseline in @sec-stereo.
 2. **The translational part scales with $1/Z$.** Near points move fast and far points move slowly. This is **motion parallax**, and it is the source of depth from motion. But only the ratio $\mathbf{T}/Z$ appears: doubling the speed and the size of the world gives the same flow. This is the scale ambiguity of @sec-sfm in differential form.
+
+### Six basic flow patterns
+
+Setting all but one velocity component to zero isolates the basic patterns. The animations below come straight from the motion field equation at constant depth, with image $x$ to the right, $y$ down and $Z$ forward; reversing a velocity reverses its arrows. They are taken from the PRAISe Lab blog post [Motion Fields and Optical Flow](https://www.praisecu.com/blog/optical-flow/), which also has a longer step-by-step derivation.
+
+**Pure translation.** Sideways motion gives uniform flow opposite to the camera; forward motion gives radial flow.
+
+```{=html}
+<div class="of-flowgrid">
+  <figure>
+    <video class="of-light" src="media/optical-flow/flow-vx.mp4" autoplay muted loop playsinline preload="metadata" aria-label="Uniform flow toward the left"></video>
+    <video class="of-dark" src="media/optical-flow/flow-vx-dark.mp4" autoplay muted loop playsinline preload="metadata" aria-hidden="true"></video>
+    <figcaption><span class="math inline">\(T_x &gt; 0\)</span>: the camera moves right, flow is to the left.</figcaption>
+  </figure>
+  <figure>
+    <video class="of-light" src="media/optical-flow/flow-vy.mp4" autoplay muted loop playsinline preload="metadata" aria-label="Uniform flow upward"></video>
+    <video class="of-dark" src="media/optical-flow/flow-vy-dark.mp4" autoplay muted loop playsinline preload="metadata" aria-hidden="true"></video>
+    <figcaption><span class="math inline">\(T_y &gt; 0\)</span>: the camera moves down, flow is upward.</figcaption>
+  </figure>
+  <figure>
+    <video class="of-light" src="media/optical-flow/flow-vz.mp4" autoplay muted loop playsinline preload="metadata" aria-label="Flow expanding from the focus of expansion"></video>
+    <video class="of-dark" src="media/optical-flow/flow-vz-dark.mp4" autoplay muted loop playsinline preload="metadata" aria-hidden="true"></video>
+    <figcaption><span class="math inline">\(T_z &gt; 0\)</span>: the camera moves forward, flow expands.</figcaption>
+  </figure>
+</div>
+```
+
+**Pure rotation.** Rotation about $x$ or $y$ gives nearly uniform flow near the center that curves toward the edges; rotation about the optical axis gives circular flow.
+
+```{=html}
+<div class="of-flowgrid">
+  <figure>
+    <video class="of-light" src="media/optical-flow/flow-wx.mp4" autoplay muted loop playsinline preload="metadata" aria-label="Flow downward, curving near the edges"></video>
+    <video class="of-dark" src="media/optical-flow/flow-wx-dark.mp4" autoplay muted loop playsinline preload="metadata" aria-hidden="true"></video>
+    <figcaption><span class="math inline">\(\omega_x &gt; 0\)</span>: the camera tilts up, flow is downward.</figcaption>
+  </figure>
+  <figure>
+    <video class="of-light" src="media/optical-flow/flow-wy.mp4" autoplay muted loop playsinline preload="metadata" aria-label="Flow toward the left, curving near the edges"></video>
+    <video class="of-dark" src="media/optical-flow/flow-wy-dark.mp4" autoplay muted loop playsinline preload="metadata" aria-hidden="true"></video>
+    <figcaption><span class="math inline">\(\omega_y &gt; 0\)</span>: the camera pans right, flow is to the left.</figcaption>
+  </figure>
+  <figure>
+    <video class="of-light" src="media/optical-flow/flow-wz.mp4" autoplay muted loop playsinline preload="metadata" aria-label="Flow circling the image center"></video>
+    <video class="of-dark" src="media/optical-flow/flow-wz-dark.mp4" autoplay muted loop playsinline preload="metadata" aria-hidden="true"></video>
+    <figcaption><span class="math inline">\(\omega_z &gt; 0\)</span>: the camera rolls, flow circles the center.</figcaption>
+  </figure>
+</div>
+```
+
+Near the image center, rotation about $y$ and translation along $x$ look almost the same: for small $x$ and $y$ both give flow that is nearly uniform and horizontal. The same holds for rotation about $x$ and translation along $y$. With a narrow field of view the two are hard to tell apart, which is one reason robots measure rotation with a gyroscope, and one reason insects and many drones prefer wide fields of view.
+
+```{=html}
+<figure class="of-figure">
+  <video class="of-light" src="media/optical-flow/flow-ambiguity.mp4" autoplay muted loop playsinline preload="metadata" aria-label="Rotation flow and translation flow side by side, with a red box marking a narrow field of view in which they look alike"></video>
+  <video class="of-dark" src="media/optical-flow/flow-ambiguity-dark.mp4" autoplay muted loop playsinline preload="metadata" aria-hidden="true"></video>
+  <figcaption>Inside the red box, a narrow field of view, the two motions produce almost the same flow.</figcaption>
+</figure>
+```
 
 The figure shows the motion field of a camera 1.2 m above a floor, looking at a wall 12 m away. Set the translation (in meters per frame) and rotation (in degrees per frame), and switch between the total flow and its two parts. Arrows are drawn three times longer than the motion per frame. Hover over the image to read the depth and time to contact.
 
