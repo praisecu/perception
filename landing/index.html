@@ -1,0 +1,227 @@
+<!doctype html>
+<html lang="en">
+<head>
+<meta charset="utf-8">
+<meta name="viewport" content="width=device-width, initial-scale=1">
+<meta name="robots" content="noindex, nofollow">
+<title>Fundamentals of Robot Perception | PRAISe Lab</title>
+<meta name="description" content="An open online book on robot perception from PRAISe Lab at the University of Colorado Boulder. Coming Christmas 2026.">
+<link rel="icon" href="cu-logo.webp">
+<link rel="preconnect" href="https://fonts.googleapis.com">
+<link rel="preconnect" href="https://fonts.gstatic.com" crossorigin>
+<link href="https://fonts.googleapis.com/css2?family=Nunito+Sans:wght@400;600;700;800&family=Open+Sans:wght@400;600&display=swap" rel="stylesheet">
+<style>
+  :root {
+    --bg: #0f0f0e;
+    --panel: #181816;
+    --line: #2c2a24;
+    --text: #f2efe6;
+    --muted: #b5ae9c;
+    --gold: #cfb87c;
+    --gold-soft: rgba(207, 184, 124, 0.14);
+  }
+  * { box-sizing: border-box; }
+  html, body { margin: 0; height: 100%; }
+  body {
+    min-height: 100vh;
+    display: flex;
+    flex-direction: column;
+    background:
+      radial-gradient(1100px 600px at 50% -10%, rgba(207, 184, 124, 0.13), transparent 60%),
+      radial-gradient(800px 500px at 100% 110%, rgba(207, 184, 124, 0.06), transparent 60%),
+      var(--bg);
+    color: var(--text);
+    font-family: "Open Sans", system-ui, sans-serif;
+    -webkit-font-smoothing: antialiased;
+  }
+  .grid {
+    position: fixed; inset: 0; pointer-events: none; opacity: 0.35;
+    background-image:
+      linear-gradient(var(--line) 1px, transparent 1px),
+      linear-gradient(90deg, var(--line) 1px, transparent 1px);
+    background-size: 56px 56px;
+    mask-image: radial-gradient(ellipse at 50% 35%, #000 0%, transparent 70%);
+    -webkit-mask-image: radial-gradient(ellipse at 50% 35%, #000 0%, transparent 70%);
+  }
+  header {
+    position: relative;
+    display: flex; align-items: center; justify-content: center;
+    padding: 22px 16px;
+    border-bottom: 1px solid var(--line);
+    background: rgba(15, 15, 14, 0.7);
+    backdrop-filter: blur(8px);
+  }
+  .brand {
+    display: inline-flex; align-items: center; gap: 12px;
+    color: var(--gold); text-decoration: none;
+    font-family: "Nunito Sans", sans-serif; font-weight: 700; font-size: 1.6rem;
+  }
+  .brand img { width: 44px; height: auto; }
+  main {
+    position: relative;
+    flex: 1;
+    display: flex; flex-direction: column; align-items: center; justify-content: center;
+    text-align: center;
+    padding: 56px 16px 64px;
+  }
+  .logos {
+    display: flex; align-items: center; justify-content: center; gap: 22px;
+    margin-bottom: 34px;
+  }
+  .logos img { width: 92px; height: auto; filter: drop-shadow(0 8px 24px rgba(207,184,124,0.25)); }
+  .logos .divider { width: 1px; height: 70px; background: var(--line); }
+  .logos .lab {
+    text-align: left; font-family: "Nunito Sans", sans-serif; line-height: 1.25;
+  }
+  .logos .lab strong { display: block; color: var(--gold); font-size: 1.55rem; font-weight: 800; }
+  .logos .lab span { color: var(--muted); font-size: 0.95rem; }
+  .badge {
+    display: inline-flex; align-items: center; gap: 8px;
+    padding: 7px 16px; border: 1px solid rgba(207,184,124,0.45); border-radius: 999px;
+    background: var(--gold-soft); color: var(--gold);
+    font-family: "Nunito Sans", sans-serif; font-weight: 700;
+    font-size: 0.78rem; letter-spacing: 0.16em; text-transform: uppercase;
+  }
+  .badge i {
+    width: 8px; height: 8px; border-radius: 50%; background: var(--gold);
+    box-shadow: 0 0 0 0 rgba(207,184,124,0.7); animation: pulse 2s infinite;
+  }
+  @keyframes pulse {
+    70% { box-shadow: 0 0 0 10px rgba(207,184,124,0); }
+    100% { box-shadow: 0 0 0 0 rgba(207,184,124,0); }
+  }
+  h1 {
+    margin: 22px 0 12px;
+    font-family: "Nunito Sans", sans-serif; font-weight: 800;
+    font-size: clamp(2.2rem, 6vw, 4rem); line-height: 1.05; letter-spacing: -0.02em;
+  }
+  .sub {
+    max-width: 640px; margin: 0 auto;
+    color: var(--muted); font-size: clamp(1rem, 2.2vw, 1.2rem); line-height: 1.65;
+  }
+  .release {
+    margin-top: 36px; color: var(--text);
+    font-family: "Nunito Sans", sans-serif; font-size: 1.1rem; font-weight: 600;
+  }
+  .release b { color: var(--gold); }
+  .countdown {
+    display: flex; justify-content: center; gap: 12px; margin-top: 18px; flex-wrap: wrap;
+  }
+  .countdown div {
+    min-width: 84px; padding: 14px 10px 10px;
+    border: 1px solid var(--line); border-radius: 14px; background: var(--panel);
+  }
+  .countdown strong {
+    display: block; font-family: "Nunito Sans", sans-serif; font-weight: 800;
+    font-size: 2rem; color: var(--gold); font-variant-numeric: tabular-nums;
+  }
+  .countdown span { color: var(--muted); font-size: 0.75rem; letter-spacing: 0.12em; text-transform: uppercase; }
+  .topics {
+    display: flex; flex-wrap: wrap; justify-content: center; gap: 8px;
+    max-width: 720px; margin: 40px auto 0; padding: 0; list-style: none;
+  }
+  .topics li {
+    padding: 6px 12px; border: 1px solid var(--line); border-radius: 999px;
+    color: var(--muted); font-size: 0.85rem; background: rgba(24,24,22,0.7);
+  }
+  .actions { margin-top: 38px; }
+  .btn {
+    display: inline-block; padding: 11px 22px; border-radius: 10px;
+    border: 1px solid var(--gold); color: var(--gold); text-decoration: none;
+    font-family: "Nunito Sans", sans-serif; font-weight: 700;
+    transition: background 0.2s, color 0.2s;
+  }
+  .btn:hover, .btn:focus-visible { background: var(--gold); color: #111; }
+  footer {
+    position: relative;
+    padding: 22px 16px; text-align: center;
+    border-top: 1px solid var(--line);
+    color: var(--muted); font-size: 0.85rem;
+  }
+  footer a { color: var(--gold); text-decoration: none; }
+  @media (max-width: 520px) {
+    .logos { flex-direction: column; gap: 14px; }
+    .logos .divider { display: none; }
+    .logos .lab { text-align: center; }
+    .countdown div { min-width: 70px; }
+    .countdown strong { font-size: 1.6rem; }
+  }
+  @media (prefers-reduced-motion: reduce) { .badge i { animation: none; } }
+</style>
+</head>
+<body>
+  <div class="grid" aria-hidden="true"></div>
+
+  <header>
+    <a class="brand" href="https://www.praisecu.com">
+      <img src="cu-logo.webp" alt="">
+      PRAISe Lab
+    </a>
+  </header>
+
+  <main>
+    <div class="logos">
+      <img src="cu-logo.webp" alt="University of Colorado Boulder">
+      <div class="divider" aria-hidden="true"></div>
+      <div class="lab">
+        <strong>PRAISe Lab</strong>
+        <span>University of Colorado Boulder</span>
+      </div>
+    </div>
+
+    <span class="badge"><i aria-hidden="true"></i>Work in progress</span>
+
+    <h1>Fundamentals of Robot Perception</h1>
+    <p class="sub">
+      An open, interactive online book on how robots see, sense and understand the world.
+      Live OpenCV demos and editable code run right in your browser.
+    </p>
+
+    <p class="release">Releasing on <b>Christmas Day, 25 December 2026</b></p>
+    <div class="countdown" id="countdown" aria-live="off">
+      <div><strong id="cd-d">--</strong><span>Days</span></div>
+      <div><strong id="cd-h">--</strong><span>Hours</span></div>
+      <div><strong id="cd-m">--</strong><span>Minutes</span></div>
+      <div><strong id="cd-s">--</strong><span>Seconds</span></div>
+    </div>
+
+    <ul class="topics" aria-label="Topics covered">
+      <li>Image formation</li>
+      <li>Features</li>
+      <li>Camera models</li>
+      <li>Computational imaging</li>
+      <li>Learning depth</li>
+      <li>Stereo</li>
+      <li>Structure from motion</li>
+      <li>NeRF</li>
+      <li>Gaussian splatting</li>
+      <li>Optical flow</li>
+    </ul>
+
+    <div class="actions">
+      <a class="btn" href="https://www.praisecu.com">Visit PRAISe Lab</a>
+    </div>
+  </main>
+
+  <footer>
+    &copy; 2026 <a href="https://www.praisecu.com">PRAISe Lab</a>, University of Colorado Boulder
+  </footer>
+
+  <script>
+    (function () {
+      // Midnight on 25 December 2026, Boulder time (MST, UTC-7).
+      var target = Date.UTC(2026, 11, 25, 7, 0, 0);
+      var ids = ["cd-d", "cd-h", "cd-m", "cd-s"].map(function (id) { return document.getElementById(id); });
+      function pad(n) { return n < 10 ? "0" + n : String(n); }
+      function tick() {
+        var left = Math.max(0, target - Date.now());
+        var s = Math.floor(left / 1000);
+        var parts = [Math.floor(s / 86400), Math.floor(s / 3600) % 24, Math.floor(s / 60) % 60, s % 60];
+        ids.forEach(function (el, i) { el.textContent = i === 0 ? String(parts[i]) : pad(parts[i]); });
+      }
+      tick();
+      setInterval(tick, 1000);
+    })();
+  </script>
+</body>
+</html>

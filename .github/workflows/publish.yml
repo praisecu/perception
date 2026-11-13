@@ -22,9 +22,21 @@ jobs:
       - uses: quarto-dev/quarto-actions/setup@v2
       - name: Render the book
         run: quarto render
+      # Until release, the root shows the landing page in landing/ and the
+      # book is served from an unlisted path kept in the PREVIEW_PATH secret.
+      # At release, delete this step and upload _book directly.
+      - name: Assemble the site
+        env:
+          PREVIEW_PATH: ${{ secrets.PREVIEW_PATH }}
+        run: |
+          test -n "$PREVIEW_PATH"
+          mkdir -p _site
+          cp -r landing/. _site/
+          cp CNAME _site/
+          cp -r _book "_site/$PREVIEW_PATH"
       - uses: actions/upload-pages-artifact@v3
         with:
-          path: _book
+          path: _site
 
   deploy:
     needs: build
