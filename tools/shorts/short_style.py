@@ -140,6 +140,21 @@ def header_bar():
     return brand_row(26).to_corner(UR, buff=0.35)
 
 
+def rounded_image(path, width, r=0.3):
+    """ImageMobject of `width` units with corners rounded to r units (cached PNG next to the source)."""
+    from PIL import Image as _Im, ImageDraw as _Dr
+    path = Path(path)
+    out = path.with_name(f"{path.stem}_r{int(round(r * 100))}w{int(round(width * 100))}.png")
+    if not out.exists():
+        im = _Im.open(path).convert("RGBA")
+        rp = int(round(r / width * im.width))
+        m = _Im.new("L", im.size, 0)
+        _Dr.Draw(m).rounded_rectangle([0, 0, im.width - 1, im.height - 1], radius=rp, fill=255)
+        im.putalpha(m)
+        im.save(out)
+    return ImageMobject(str(out)).set_width(width)
+
+
 def card(w, h, r=0.28):
     """A news-card style panel with a soft border."""
     return RoundedRectangle(width=w, height=h, corner_radius=r).set_fill("#16170f", 1).set_stroke("#3a3b33", 2)
@@ -199,8 +214,8 @@ def play_cover(scene, chapter, line1, line2, sub, image=None, hold=1.4, extra=No
     s = body(sub, 40)
     items = [k, t1, t2, s]
     if image is not None:
-        im = ImageMobject(str(image)).set_width(7.4)
-        c = card(7.8, im.height + 0.4)
+        im = rounded_image(image, 7.4, 0.3)
+        c = card(7.8, im.height + 0.4, 0.3 + 0.2)
         im.move_to(c)
         items.append(Group(c, im))
     elif extra is not None:

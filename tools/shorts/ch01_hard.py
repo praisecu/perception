@@ -42,15 +42,15 @@ class Hard(Scene):
         self.play(FadeIn(big, scale=0.6), Write(q2), run_time=0.8)
         same = pill("same pixels", size=40).next_to(q2, DOWN, buff=0.6)
         self.play(FadeIn(same, shift=UP * 0.2), Indicate(small, color=GOLD), Indicate(big, color=GOLD), run_time=1.0)
-        self.wait(1.4)
+        self.wait(2.4)
 
         # ---------- Beat B: forced perspective (11 to 19 s) ----------
         self.play(FadeOut(VGroup(cap, cam, ray_t, ray_b, small, big, q1, q2, same)), run_time=0.5)
-        cap2 = say("These two look the same size.", 48).move_to(UP * 5.3)
-        img = ImageMobject(str(ASSETS / "forced_0.jpg")).set_width(7.0).move_to(UP * 2.9)
-        frame = rough_box(img.width + 0.12, img.height + 0.12, INK, 4, radius=0.1).move_to(img)
+        cap2 = fit(say("These two look the same size.", 48), 8.2).move_to(UP * 5.3)
+        img = rounded_image(ASSETS / "forced_0.jpg", 7.0, 0.3).move_to(UP * 2.9)
+        frame = rough_box(img.width + 0.12, img.height + 0.12, INK, 4, radius=0.36).move_to(img)
         self.play(Write(cap2), FadeIn(img, scale=0.95), Create(frame), run_time=0.9)
-        self.wait(0.6)
+        self.wait(1.5)
 
         # Top view, from forced.json: camera at the origin, small drone (0.5 m) at
         # (-0.45, 2), big drone (1.5 m) at (1.35, 6).
@@ -74,7 +74,7 @@ class Hard(Scene):
         cap3 = say("One is 3× bigger and 3× farther.", 46, GOLD)
         fit(cap3, 8.4).move_to(cap2)
         self.play(ReplacementTransform(cap2, cap3), run_time=0.6)
-        self.wait(1.6)
+        self.wait(2.6)
 
         # ---------- Beat C: light changes every number (19 to 27 s) ----------
         self.play(FadeOut(Group(cap3, img, frame, tv_lab, cam_dot, s_d, b_d, sight, l_s, l_b)), run_time=0.5)
@@ -88,16 +88,16 @@ class Hard(Scene):
         Image.fromarray(dim).save(ASSETS / "light_dim.png")
         cols = Group()
         for path, arr, name in ((ASSETS / "light_bright.png", bright, "bright"), (ASSETS / "light_dim.png", dim, "dim")):
-            im = ImageMobject(str(path)).set_width(3.7)
-            fr = rough_box(im.width + 0.1, im.height + 0.1, INK, 3, radius=0.08).move_to(im)
+            im = rounded_image(path, 3.7, 0.22)
+            fr = rough_box(im.width + 0.1, im.height + 0.1, INK, 3, radius=0.27).move_to(im)
             g = arr.mean(axis=2)
             cells = VGroup()
             for r in range(3):
                 for c in range(3):
                     v = int(g[60 + r * 12:72 + r * 12, 120 + c * 12:132 + c * 12].mean())
-                    sq = Square(1.05).set_stroke("#2c2b28", 2).set_fill(rgb_to_color([v / 255] * 3), 1)
+                    sq = RoundedRectangle(width=1.0, height=1.0, corner_radius=0.15).set_stroke("#2c2b28", 2).set_fill(rgb_to_color([v / 255] * 3), 1)
                     cells.add(VGroup(sq, mono(str(v), 30, "#111111" if v > 120 else INK).move_to(sq)))
-            cells.arrange_in_grid(3, 3, buff=0)
+            cells.arrange_in_grid(3, 3, buff=0.06)
             for cc in cells:
                 cc[1].move_to(cc[0])
             lab = kicker(name, 26)
@@ -108,7 +108,7 @@ class Hard(Scene):
         cap5 = say("Same drone. Different numbers.", 48, GOLD)
         fit(cap5, 8.4).next_to(cols, DOWN, buff=0.8)
         self.play(Write(cap5), run_time=0.9)
-        self.wait(1.6)
+        self.wait(2.6)
 
         # ---------- Beat D: a camera flattens the world (27 to 33 s) ----------
         self.play(FadeOut(Group(cap4, cols, cap5)), run_time=0.5)
@@ -130,7 +130,7 @@ class Hard(Scene):
         self.wait(0.4)
         lost = pill("depth is lost", size=40).move_to(DOWN * 2.6)
         self.play(Transform(cube, flat), FadeIn(lost, shift=UP * 0.2), run_time=1.2)
-        self.wait(1.2)
+        self.wait(2.2)
 
         # ---------- Close (33 to 38 s) ----------
         self.play(FadeOut(VGroup(cap6, cube, lost)), run_time=0.5)
@@ -141,6 +141,6 @@ class Hard(Scene):
         self.play(Write(c1), run_time=0.7)
         self.play(FadeIn(c2, shift=UP * 0.3), Create(u), run_time=0.8)
         self.play(FadeIn(c3, shift=UP * 0.2), run_time=0.6)
-        self.wait(1.6)
+        self.wait(2.6)
         self.play(FadeOut(VGroup(c1, c2, c3, u)), run_time=0.5)
         play_end_card(self, "Chapter 1 · Introduction")

@@ -68,8 +68,8 @@ class Seeing(Scene):
         img = ImageMobject(str(SCENE_R)).set_width(8.0).move_to(UP * 0.6)
         frame = rough_box(img.width + 0.12, img.height + 0.12, INK, 4, radius=0.36).move_to(img)
         cone = VGroup(
-            DashedLine(cam.get_bottom(), frame.get_corner(UL), dash_length=0.15).set_stroke(MUTED, 3),
-            DashedLine(cam.get_bottom(), frame.get_corner(UR), dash_length=0.15).set_stroke(MUTED, 3),
+            DashedLine(cam.get_bottom(), frame.get_corner(UL) + DR * 0.36 * (1 - 1 / np.sqrt(2)), dash_length=0.15).set_stroke(MUTED, 3),
+            DashedLine(cam.get_bottom(), frame.get_corner(UR) + DL * 0.36 * (1 - 1 / np.sqrt(2)), dash_length=0.15).set_stroke(MUTED, 3),
         )
         self.play(Create(cam), Write(lab1), run_time=1.0)
         self.play(Create(cone), run_time=0.5)
@@ -84,7 +84,8 @@ class Seeing(Scene):
         img_g = ImageMobject(str(ASSETS / "scene_gray_r.png")).set_width(img.width).move_to(img)
         g_p = pill("grayscale", size=34).next_to(frame, DOWN, buff=0.45)
         cap2 = say("The robot sees...", 52).next_to(g_p, DOWN, buff=0.4)
-        self.play(FadeIn(img_g, run_time=0.9), FadeIn(g_p, shift=UP * 0.15), FadeOut(cap1, shift=UP * 0.2), run_time=0.9)
+        self.play(FadeOut(cap1, shift=UP * 0.2), run_time=0.35)
+        self.play(FadeIn(img_g), FadeIn(g_p, shift=UP * 0.15), run_time=0.9)
         self.wait(1.0)
         self.play(Create(patch), Write(cap2), run_time=0.7)
         self.wait(0.5)
@@ -103,14 +104,17 @@ class Seeing(Scene):
         for sq_num in cells:
             sq_num[1].move_to(sq_num[0])
         seed = patch.copy()
+        p = pill("just numbers", size=46).next_to(cells, UP, buff=0.5)
+        cap2_to = cap2.copy().next_to(p, UP, buff=0.35)
         self.play(
             img.animate.set_opacity(0.0), FadeOut(img_g), FadeOut(g_p), frame.animate.set_stroke(opacity=0.0),
             FadeOut(cone), FadeOut(cam), FadeOut(lab1),
+            FadeOut(cap2, rate_func=lambda t: min(1.0, 4 * t)),
             ReplacementTransform(seed, cells), FadeOut(patch),
             run_time=1.0,
         )
-        p = pill("just numbers", size=46).next_to(cells, UP, buff=0.5)
-        self.play(FadeIn(p, scale=0.8), cap2.animate.next_to(p, UP, buff=0.35), run_time=0.5)
+        cap2.move_to(cap2_to)
+        self.play(FadeIn(p, scale=0.8), FadeIn(cap2, shift=DOWN * 0.15), run_time=0.5)
         self.until(S[4] + 0.3)
         self.play(LaggedStart(*[Indicate(c[1], color=GOLD, scale_factor=1.25) for c in cells[::5]], lag_ratio=0.12), run_time=1.6)
         self.until(S[4] + 3.4)
@@ -224,8 +228,10 @@ class Seeing(Scene):
 
         # ---------- Beat 4: meaning hides in the numbers (21 to 30 s) ----------
         self.play(FadeOut(VGroup(nd1, nd2, flat_gray)), img.animate.set_opacity(1), frame.animate.set_stroke(opacity=1), run_time=0.6)
-        q = say("The robot must understand before it can act.", 46).next_to(frame, UP, buff=0.6)
-        fit(q, 8.0)
+        q1 = VGroup(say("The robot must", 50), hand("Understand,", 66, GOLD)).arrange(RIGHT, buff=0.3, aligned_edge=DOWN)
+        q2 = VGroup(say("Before it can", 50), hand("Act.", 66, GOLD)).arrange(RIGHT, buff=0.3, aligned_edge=DOWN)
+        q = VGroup(q1, q2).arrange(DOWN, buff=0.3)
+        fit(q, 8.2).next_to(frame, UP, buff=0.5)
         self.play(Write(q), run_time=0.9)
         self.until(S[9])
         edges = ImageMobject(str(ASSETS / "edges_r.png")).set_width(img.width).move_to(img)
@@ -304,6 +310,7 @@ class Seeing(Scene):
         ar = VGroup(rough_arrow(steps2[0].get_right() + RIGHT * 0.12, steps2[1].get_left() + LEFT * 0.12),
                     rough_arrow(steps2[1].get_right() + RIGHT * 0.12, steps2[2].get_left() + LEFT * 0.12))
         self.play(LaggedStart(Write(steps2[0]), Create(ar[0]), Write(steps2[1]), Create(ar[1]), Write(steps2[2]), lag_ratio=0.3), run_time=1.3)
+        self.wait(1.0)
         self.until(B[8] - 0.5)
 
         # ---------- End card (39 to 42 s) ----------

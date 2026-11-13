@@ -36,7 +36,7 @@ class Nature(Scene):
         fit(yet, 8.2)
         self.play(Write(yet), run_time=0.8)
         self.play(Write(yet2), run_time=0.7)
-        self.wait(1.2)
+        self.wait(2.2)
 
         # ---------- Beat B: balance the flow (10 to 21 s) ----------
         self.play(FadeOut(VGroup(bee, g1, g2, gy)), run_time=0.5)
@@ -84,7 +84,7 @@ class Nature(Scene):
         t1 = body("Left wall is close: it streams past fast.", 34)
         fit(t1, 8.2).move_to(DOWN * 6.4)
         self.play(FadeIn(t1, shift=UP * 0.2), run_time=0.5)
-        self.wait(1.0)
+        self.wait(2.0)
         t2 = body("Steer until both sides match.", 36, INK)
         fit(t2, 8.2).move_to(t1)
         self.play(FadeOut(t1), FadeIn(t2), run_time=0.4)
@@ -92,7 +92,7 @@ class Nature(Scene):
         eq = pill("centred", size=34).move_to(UP * 3.2)
         cred = mono("Srinivasan et al., 1991", 22, MUTED).move_to(DOWN * 7.2)
         self.play(FadeIn(eq, scale=0.8), FadeIn(cred), run_time=0.5)
-        self.wait(1.2)
+        self.wait(2.2)
         b.clear_updaters(); fl.clear_updaters()
 
         # ---------- Beat C: land by holding flow constant (21 to 29 s) ----------
@@ -125,15 +125,15 @@ class Nature(Scene):
         note = body("Speed falls with height: a soft touchdown.", 32, GOLD).move_to(DOWN * 6.9)
         fit(note, 8.4)
         self.play(FadeIn(note, shift=UP * 0.2), run_time=0.5)
-        self.wait(1.0)
+        self.wait(2.2)
         sb.clear_updaters(); spd.clear_updaters()
 
         # ---------- Beat D: robots borrow the tricks (29 to 35 s) ----------
         self.play(FadeOut(Group(cap2, cap2b, ground, grass, flower, sb, trail, spd, note)), run_time=0.5)
         cap3 = say("Robots can borrow the same tricks.", 48)
         fit(cap3, 8.4).move_to(UP * 5.3)
-        im = ImageMobject(str(ASSETS / "lab-drone.jpg")).set_width(7.0)
-        c = card(7.6, im.height + 0.5).set_fill("#f4f3ef", 1)
+        im = rounded_image(ASSETS / "lab-drone.jpg", 7.0, 0.3)
+        c = card(7.6, im.height + 0.5, 0.3 + 0.27).set_fill("#f4f3ef", 1)
         im.move_to(c)
         grp = Group(c, im).move_to(UP * 1.4)
         mp = pill("Minimal Perception", size=40).next_to(grp, DOWN, buff=0.6)
@@ -141,7 +141,7 @@ class Nature(Scene):
         cred = mono("PRAISe Lab drone", 24, MUTED).next_to(grp, UP, buff=0.15).align_to(grp, RIGHT)
         self.play(Write(cap3), FadeIn(grp, scale=0.95), FadeIn(cred), run_time=0.9)
         self.play(FadeIn(mp, shift=UP * 0.2), FadeIn(sub, shift=UP * 0.2), run_time=0.6)
-        self.wait(1.6)
+        self.wait(2.6)
 
         # ---------- Close (35 to 39 s) ----------
         self.play(FadeOut(Group(cap3, grp, mp, sub, cred)), run_time=0.5)
@@ -153,6 +153,6 @@ class Nature(Scene):
         self.play(Write(c1), run_time=0.7)
         self.play(FadeIn(c2, shift=UP * 0.3), run_time=0.6)
         self.play(FadeIn(c3, shift=UP * 0.2), run_time=0.6)
-        self.wait(1.4)
+        self.wait(2.6)
         self.play(FadeOut(VGroup(c1, c2, c3)), run_time=0.5)
         play_end_card(self, "Chapter 1 · Introduction")
