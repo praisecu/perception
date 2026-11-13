@@ -74,7 +74,14 @@ def kicker(s, size=28):
 
 
 def _jitter(points, amp):
-    return points + RNG.normal(0, amp, points.shape) * np.array([1, 1, 0])
+    """Smooth, pencil-like wobble: a continuous offset field, so curves never kink or break."""
+    c = points.mean(0)
+    th = np.arctan2(points[:, 1] - c[1], points[:, 0] - c[0])
+    ph = RNG.uniform(0, 2 * np.pi, 4)
+    dx = np.sin(2 * th + ph[0]) + 0.5 * np.sin(5 * th + ph[1])
+    dy = np.sin(3 * th + ph[2]) + 0.5 * np.sin(4 * th + ph[3])
+    off = np.stack([dx, dy, np.zeros_like(dx)], 1) * amp * 0.9
+    return points + off
 
 
 def rough_box(w, h, color=INK, stroke=4, radius=0.18, amp=0.018, fill=None, fill_opacity=0.0):
@@ -133,9 +140,9 @@ def header_bar():
     return brand_row(26).to_corner(UR, buff=0.35)
 
 
-def card(w, h):
+def card(w, h, r=0.28):
     """A news-card style panel with a soft border."""
-    return RoundedRectangle(width=w, height=h, corner_radius=0.28).set_fill("#16170f", 1).set_stroke("#3a3b33", 2)
+    return RoundedRectangle(width=w, height=h, corner_radius=r).set_fill("#16170f", 1).set_stroke("#3a3b33", 2)
 
 
 def grid_bg():

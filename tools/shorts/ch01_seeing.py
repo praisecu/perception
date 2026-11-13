@@ -51,7 +51,7 @@ class Seeing(Scene):
         t2 = title("robot see?", 120, GOLD)
         sub = body("It is not what you think.", 40)
         thumb = ImageMobject(str(SCENE_R)).set_width(7.4)
-        thumb_card = card(7.8, thumb.height + 0.4)
+        thumb_card = card(7.8, thumb.height + 0.4, 0.3 * 7.4 / 8 + 0.2)
         thumb.move_to(thumb_card)
         block = Group(k, t1, t2, sub, Group(thumb_card, thumb)).arrange(DOWN, buff=0.45).move_to(DOWN * 0.3)
         t1.shift(DOWN * 0.15); t2.shift(DOWN * 0.25); sub.shift(DOWN * 0.2); thumb_card.shift(DOWN * 0.35); thumb.shift(DOWN * 0.35)
@@ -66,7 +66,7 @@ class Seeing(Scene):
         cam = camera_doodle(1.0).move_to(UP * 4.9)
         lab1 = say("A camera on a robot", 46).next_to(cam, UP, buff=0.45)
         img = ImageMobject(str(SCENE_R)).set_width(8.0).move_to(UP * 0.6)
-        frame = rough_box(img.width + 0.12, img.height + 0.12, INK, 4, radius=0.34).move_to(img)
+        frame = rough_box(img.width + 0.12, img.height + 0.12, INK, 4, radius=0.36).move_to(img)
         cone = VGroup(
             DashedLine(cam.get_bottom(), frame.get_corner(UL), dash_length=0.15).set_stroke(MUTED, 3),
             DashedLine(cam.get_bottom(), frame.get_corner(UR), dash_length=0.15).set_stroke(MUTED, 3),
@@ -125,44 +125,72 @@ class Seeing(Scene):
         self.play(FadeIn(b1, shift=UP * 0.1), run_time=0.4)
         self.until(B[3] - 0.6)
 
-        # ---------- Colour: three grids, red, green, blue ----------
+        # ---------- Colour: tilt the gray grid, split into R, G, B, fold back ----------
+        flat_gray = cells.copy()  # clean number grid, reused for the "drone" beat
+        gc = cells.get_center()
+
+        def persp(c0, th=58 * DEGREES, f=14.0):
+            def fn(pt):
+                x, y = pt[0] - c0[0], pt[1] - c0[1]
+                Y, Z = y * np.cos(th), y * np.sin(th)
+                k_ = f / (f + Z)
+                return np.array([c0[0] + x * k_, c0[1] + Y * k_, 0.0])
+            return fn
+
+        self.play(FadeOut(VGroup(cap2, p, bar, b0, b1, blab)), run_time=0.4)
+        flat2 = cells.copy().scale(0.78).move_to(DOWN * 0.7)
+        gc2 = flat2.get_center()
+        self.play(Transform(cells, flat2.copy().apply_function(persp(gc2))), run_time=1.0, rate_func=smooth)
+
         rgb = np.asarray(Image.open(SCENE).convert("RGB"), dtype=float)
         tints = {"R": (1, 0, 0), "G": (0, 1, 0), "B": (0, 0, 1)}
         lab_col = {"R": "#ff7a6e", "G": "#7fdc86", "B": "#7fb2ff"}
         layers = {}
-        for ch, k_ in (("B", 2), ("G", 1), ("R", 0)):
+        for ch, k_ in (("R", 0), ("G", 1), ("B", 2)):
             lay = VGroup()
-            for r in range(n):
-                for c in range(n):
-                    v = int(rgb[y0 + r * cell:y0 + (r + 1) * cell, x0 + c * cell:x0 + (c + 1) * cell, k_].mean())
-                    col = rgb_to_color([t * v / 255 for t in tints[ch]])
-                    sq = RoundedRectangle(width=0.9, height=0.9, corner_radius=0.14).set_stroke("#2c2b28", 2).set_fill(col, 1)
-                    lay.add(VGroup(sq, mono(str(v), 26, "#111111" if v > 150 else INK).move_to(sq)))
-            lay.arrange_in_grid(n, n, buff=0.05)
-            for sq_num in lay:
-                sq_num[1].move_to(sq_num[0])
+            for idx, sq_num in enumerate(flat2):
+                r, c = divmod(idx, n)
+                v = int(rgb[y0 + r * cell:y0 + (r + 1) * cell, x0 + c * cell:x0 + (c + 1) * cell, k_].mean())
+                sq = sq_num[0].copy().set_fill(rgb_to_color([t * v / 255 for t in tints[ch]]), 1)
+                lay.add(VGroup(sq, mono(str(v), 26, "#111111" if v > 150 else INK).move_to(sq)))
+            lay.apply_function(persp(gc2))
             layers[ch] = lay
-        layers["G"].shift(UR * 0.5); layers["B"].shift(UR * 1.0)
-        stack = VGroup(layers["B"], layers["G"], layers["R"]).move_to(DOWN * 0.4)
-        tags_rgb = VGroup(*[mono(ch, 36, lab_col[ch]).next_to(layers[ch].get_corner(UL), LEFT, buff=0.2).shift(DOWN * 0.28)
-                            for ch in ("R", "G", "B")])
         c_cap = say("A colour image is three grids", 50).move_to(UP * 5.0)
         fit(c_cap, 8.4)
         c_sub = mono("red · green · blue, each 0 to 255", 32, INK).next_to(c_cap, DOWN, buff=0.3)
-        self.play(FadeOut(VGroup(cap2, p, bar, b0, b1, blab, cells)),
-                  FadeIn(layers["B"], shift=DL * 0.3), FadeIn(layers["G"], shift=DL * 0.3), FadeIn(layers["R"], shift=DL * 0.3),
-                  FadeIn(c_cap, shift=UP * 0.2), run_time=0.9)
+        # Bottom layer first so the top (red) layer is drawn over the others.
+        self.play(FadeOut(cells), FadeIn(layers["B"]), FadeIn(layers["G"]), FadeIn(layers["R"]), run_time=0.5)
+        sep = 2.5
+        self.play(layers["R"].animate.shift(UP * sep), layers["B"].animate.shift(DOWN * sep),
+                  FadeIn(c_cap, shift=UP * 0.2), run_time=1.1, rate_func=smooth)
+        tags_rgb = VGroup(*[mono(ch, 40, lab_col[ch]).next_to(layers[ch], LEFT, buff=0.25)
+                            for ch in ("R", "G", "B")])
         self.play(FadeIn(tags_rgb), FadeIn(c_sub, shift=UP * 0.15), run_time=0.5)
+
         i_px = 14
-        px_box = SurroundingRectangle(layers["R"][i_px], color=GOLD, buff=0.04, stroke_width=6, corner_radius=0.16)
+        hls = VGroup(*[layers[ch][i_px][0].copy().set_fill(opacity=0).set_stroke(GOLD, 6) for ch in ("R", "G", "B")])
+        link = DashedLine(hls[0].get_center(), hls[2].get_center(), dash_length=0.12).set_stroke(GOLD, 3)
         rv, gv, bv = (layers[ch][i_px][1].text for ch in ("R", "G", "B"))
-        px_t = mono(f"one pixel = ({rv}, {gv}, {bv})", 34, GOLD).next_to(stack, DOWN, buff=0.5)
-        self.play(Create(px_box), FadeIn(px_t, shift=UP * 0.15), run_time=0.6)
-        self.until(S[5] + 1.6)
+        px_t = mono(f"one pixel = ({rv}, {gv}, {bv})", 36, GOLD).next_to(layers["B"], DOWN, buff=0.45)
+        self.play(Create(hls), Create(link), FadeIn(px_t, shift=UP * 0.15), run_time=0.7)
+        self.wait(1.2)
+
+        # Fold back into one flat colour image.
+        flat_col = VGroup()
+        for idx, sq_num in enumerate(flat_gray):
+            r, c = divmod(idx, n)
+            col = rgb[y0 + r * cell:y0 + (r + 1) * cell, x0 + c * cell:x0 + (c + 1) * cell].reshape(-1, 3).mean(0) / 255
+            sq = sq_num[0].copy().set_fill(rgb_to_color(col), 1)
+            flat_col.add(VGroup(sq, sq_num[1].copy().set_opacity(0)))
+        self.play(FadeOut(VGroup(hls, link, tags_rgb, px_t)),
+                  layers["R"].animate.shift(DOWN * sep), layers["B"].animate.shift(UP * sep), run_time=0.8, rate_func=smooth)
+        self.remove(layers["G"], layers["B"])
+        self.play(Transform(layers["R"], flat_col), run_time=1.0, rate_func=smooth)
+        self.wait(0.4)
 
         # ---------- Beat 3: how many numbers ----------
-        cells = VGroup(stack, tags_rgb)
-        self.play(FadeOut(VGroup(c_cap, c_sub, px_box, px_t)), cells.animate.scale(0.42).move_to(UP * 4.6), run_time=0.6)
+        cells = layers["R"]
+        self.play(FadeOut(VGroup(c_cap, c_sub)), cells.animate.scale(0.42).move_to(UP * 4.6), run_time=0.6)
         l1 = mono("1920 × 1080 pixels × 3 colors", 34, INK)
         v1 = ValueTracker(0)
         n1_lab = body("numbers in one frame", 40)
@@ -184,7 +212,7 @@ class Seeing(Scene):
 
         # ---------- Not one says "drone" ----------
         n1.clear_updaters(); n2.clear_updaters()
-        self.play(FadeOut(VGroup(l1, n1, n1_lab, l2, n2, n2_lab, ul)), cells.animate.scale(1 / 0.42).move_to(DOWN * 0.6).set_opacity(0.25), run_time=0.4)
+        self.play(FadeOut(VGroup(l1, n1, n1_lab, l2, n2, n2_lab, ul)), FadeOut(cells), FadeIn(flat_gray.move_to(DOWN * 0.6).set_opacity(0.25)), run_time=0.4)
         nd1 = say("And not one of them", 56).move_to(UP * 4.6)
         nd2 = title("says “drone”.", 110, GOLD).next_to(nd1, DOWN, buff=0.35)
         fit(nd2, 7.4)
@@ -193,9 +221,9 @@ class Seeing(Scene):
         self.until(B[5] - 0.6)
 
         # ---------- Beat 4: meaning hides in the numbers (21 to 30 s) ----------
-        self.play(FadeOut(VGroup(nd1, nd2, cells)), img.animate.set_opacity(1), frame.animate.set_stroke(opacity=1), run_time=0.6)
-        q = say("The robot must find the meaning.", 48).next_to(frame, UP, buff=0.6)
-        fit(q, 8.4)
+        self.play(FadeOut(VGroup(nd1, nd2, flat_gray)), img.animate.set_opacity(1), frame.animate.set_stroke(opacity=1), run_time=0.6)
+        q = say("The robot must understand before it can act.", 46).next_to(frame, UP, buff=0.6)
+        fit(q, 8.0)
         self.play(Write(q), run_time=0.9)
         self.until(S[9])
         edges = ImageMobject(str(ASSETS / "edges_r.png")).set_width(img.width).move_to(img)
@@ -259,7 +287,7 @@ class Seeing(Scene):
         wall_r = rough_box(2.6, 1.0, INK, 5, radius=0.32, fill="#3a3832", fill_opacity=1).move_to([2.15, -0.4, 0])
         for w in (wall_l, wall_r):
             hatch = VGroup(*[Line([x, -0.85, 0], [x + 0.5, 0.05, 0]).set_stroke(MUTED, 2, 0.6)
-                             for x in np.arange(-1.1, 0.8, 0.38)]).move_to(w)
+                             for x in np.arange(-0.95, 0.6, 0.36)]).move_to(w)
             w.add(hatch)
         gap_lab = mono("gap", 30, MUTED).move_to([0, wall_l.get_y(), 0])
         drone = drone_doodle(0.75).move_to(DOWN * 5.2)
