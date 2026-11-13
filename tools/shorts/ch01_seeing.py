@@ -13,6 +13,7 @@ from short_style import *
 from short_style import HERE
 
 SCENE = ASSETS / "scene.jpg"
+SCENE_R = ASSETS / "scene_r.png"
 
 # Beat and line start times from the recorded narration (prep_voice.py).
 import json
@@ -32,7 +33,7 @@ class Seeing(Scene):
 
     def box_on(self, img, x0, y0, x1, y1, color=GOLD, stroke=5):
         a, b = self.px(img, x0, y0), self.px(img, x1, y1)
-        bx = rough_box(abs(b[0] - a[0]), abs(b[1] - a[1]), color, stroke, radius=0.08, amp=0.012)
+        bx = rough_box(abs(b[0] - a[0]), abs(b[1] - a[1]), color, stroke, radius=0.2, amp=0.012)
         return bx.move_to((a + b) / 2)
 
     def until(self, t):
@@ -49,7 +50,7 @@ class Seeing(Scene):
         t1 = title("How does a", 100, HEADING)
         t2 = title("robot see?", 120, GOLD)
         sub = body("It is not what you think.", 40)
-        thumb = ImageMobject(str(SCENE)).set_width(7.4)
+        thumb = ImageMobject(str(SCENE_R)).set_width(7.4)
         thumb_card = card(7.8, thumb.height + 0.4)
         thumb.move_to(thumb_card)
         block = Group(k, t1, t2, sub, Group(thumb_card, thumb)).arrange(DOWN, buff=0.45).move_to(DOWN * 0.3)
@@ -64,8 +65,8 @@ class Seeing(Scene):
         # ---------- Beat 1: a camera looks at a room (3 to 8 s) ----------
         cam = camera_doodle(1.0).move_to(UP * 4.9)
         lab1 = say("A camera on a robot", 46).next_to(cam, UP, buff=0.45)
-        img = ImageMobject(str(SCENE)).set_width(8.0).move_to(UP * 0.6)
-        frame = rough_box(img.width + 0.12, img.height + 0.12, INK, 4, radius=0.1).move_to(img)
+        img = ImageMobject(str(SCENE_R)).set_width(8.0).move_to(UP * 0.6)
+        frame = rough_box(img.width + 0.12, img.height + 0.12, INK, 4, radius=0.34).move_to(img)
         cone = VGroup(
             DashedLine(cam.get_bottom(), frame.get_corner(UL), dash_length=0.15).set_stroke(MUTED, 3),
             DashedLine(cam.get_bottom(), frame.get_corner(UR), dash_length=0.15).set_stroke(MUTED, 3),
@@ -81,7 +82,7 @@ class Seeing(Scene):
         x0, y0, n, cell = 832, 352, 6, 9
         patch = self.box_on(img, x0, y0, x0 + n * cell, y0 + n * cell, GOLD, 5)
         cap2 = say("The robot sees...", 52).move_to(cap1)
-        img_g = ImageMobject(str(ASSETS / "scene_gray.jpg")).set_width(img.width).move_to(img)
+        img_g = ImageMobject(str(ASSETS / "scene_gray_r.png")).set_width(img.width).move_to(img)
         g_p = pill("grayscale", size=34).move_to(cap1)
         self.play(FadeIn(img_g), FadeIn(g_p, shift=UP * 0.15), FadeOut(cap1, shift=UP * 0.2), run_time=0.6)
         self.play(Create(patch), run_time=0.5)
@@ -94,10 +95,10 @@ class Seeing(Scene):
         for r in range(n):
             for c in range(n):
                 v = vals[r][c]
-                sq = Square(1.18).set_stroke("#2c2b28", 2).set_fill(rgb_to_color([v / 255] * 3), 1)
+                sq = RoundedRectangle(width=1.12, height=1.12, corner_radius=0.16).set_stroke("#2c2b28", 2).set_fill(rgb_to_color([v / 255] * 3), 1)
                 num = mono(str(v), 30, "#111111" if v > 120 else INK)
                 cells.add(VGroup(sq, num))
-        cells.arrange_in_grid(n, n, buff=0).move_to(DOWN * 0.2)
+        cells.arrange_in_grid(n, n, buff=0.06).move_to(DOWN * 0.2)
         for sq_num in cells:
             sq_num[1].move_to(sq_num[0])
         seed = patch.copy()
@@ -112,7 +113,7 @@ class Seeing(Scene):
         self.until(S[4] + 0.3)
         self.play(LaggedStart(*[Indicate(c[1], color=GOLD, scale_factor=1.25) for c in cells[::5]], lag_ratio=0.12), run_time=1.6)
         self.until(S[4] + 3.4)
-        bar = Rectangle(width=7.08, height=0.5).set_stroke(INK, 2)
+        bar = RoundedRectangle(width=7.08, height=0.5, corner_radius=0.25).set_stroke(INK, 2)
         bar.set_fill(color=[BLACK, WHITE], opacity=1)
         bar.set_sheen_direction(RIGHT)
         bar.next_to(cells, DOWN, buff=0.7)
@@ -135,9 +136,9 @@ class Seeing(Scene):
                 for c in range(n):
                     v = int(rgb[y0 + r * cell:y0 + (r + 1) * cell, x0 + c * cell:x0 + (c + 1) * cell, k_].mean())
                     col = rgb_to_color([t * v / 255 for t in tints[ch]])
-                    sq = Square(0.95).set_stroke("#2c2b28", 2).set_fill(col, 1)
+                    sq = RoundedRectangle(width=0.9, height=0.9, corner_radius=0.14).set_stroke("#2c2b28", 2).set_fill(col, 1)
                     lay.add(VGroup(sq, mono(str(v), 26, "#111111" if v > 150 else INK).move_to(sq)))
-            lay.arrange_in_grid(n, n, buff=0)
+            lay.arrange_in_grid(n, n, buff=0.05)
             for sq_num in lay:
                 sq_num[1].move_to(sq_num[0])
             layers[ch] = lay
@@ -153,7 +154,7 @@ class Seeing(Scene):
                   FadeIn(c_cap, shift=UP * 0.2), run_time=0.9)
         self.play(FadeIn(tags_rgb), FadeIn(c_sub, shift=UP * 0.15), run_time=0.5)
         i_px = 14
-        px_box = SurroundingRectangle(layers["R"][i_px], color=GOLD, buff=0.02, stroke_width=6)
+        px_box = SurroundingRectangle(layers["R"][i_px], color=GOLD, buff=0.04, stroke_width=6, corner_radius=0.16)
         rv, gv, bv = (layers[ch][i_px][1].text for ch in ("R", "G", "B"))
         px_t = mono(f"one pixel = ({rv}, {gv}, {bv})", 34, GOLD).next_to(stack, DOWN, buff=0.5)
         self.play(Create(px_box), FadeIn(px_t, shift=UP * 0.15), run_time=0.6)
@@ -197,7 +198,7 @@ class Seeing(Scene):
         fit(q, 8.4)
         self.play(Write(q), run_time=0.9)
         self.until(S[9])
-        edges = ImageMobject(str(ASSETS / "edges.png")).set_width(img.width).move_to(img)
+        edges = ImageMobject(str(ASSETS / "edges_r.png")).set_width(img.width).move_to(img)
         e_p = pill("edges", size=40).next_to(frame, DOWN, buff=0.45)
         self.play(img.animate.set_opacity(0.35), FadeIn(edges), FadeIn(e_p, shift=UP * 0.2), run_time=0.8)
         self.until(S[10])
@@ -229,7 +230,7 @@ class Seeing(Scene):
         steps = ["pixels", "edges", "objects", "decision"]
         nodes = VGroup()
         for i, s in enumerate(steps):
-            bx = rough_box(4.2, 1.1, GOLD if i == 3 else INK, 4, radius=0.2)
+            bx = rough_box(4.2, 1.1, GOLD if i == 3 else INK, 4, radius=0.5)
             tx = hand(s, 46, GOLD if i == 3 else INK).move_to(bx)
             nodes.add(VGroup(bx, tx))
         nodes.arrange(DOWN, buff=0.85).move_to(DOWN * 1.2)
@@ -254,8 +255,8 @@ class Seeing(Scene):
         h1 = say("Without perception, a robot", 50).move_to(UP * 5.2)
         h1.scale_to_fit_width(min(h1.width, 8.0))
         h2 = title("can't act.", 92, GOLD).next_to(h1, DOWN, buff=0.35)
-        wall_l = rough_box(2.6, 1.0, INK, 5, radius=0.08, fill="#3a3832", fill_opacity=1).move_to([-2.15, -0.4, 0])
-        wall_r = rough_box(2.6, 1.0, INK, 5, radius=0.08, fill="#3a3832", fill_opacity=1).move_to([2.15, -0.4, 0])
+        wall_l = rough_box(2.6, 1.0, INK, 5, radius=0.32, fill="#3a3832", fill_opacity=1).move_to([-2.15, -0.4, 0])
+        wall_r = rough_box(2.6, 1.0, INK, 5, radius=0.32, fill="#3a3832", fill_opacity=1).move_to([2.15, -0.4, 0])
         for w in (wall_l, wall_r):
             hatch = VGroup(*[Line([x, -0.85, 0], [x + 0.5, 0.05, 0]).set_stroke(MUTED, 2, 0.6)
                              for x in np.arange(-1.1, 0.8, 0.38)]).move_to(w)
