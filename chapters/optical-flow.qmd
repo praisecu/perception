@@ -1,0 +1,636 @@
+---
+# Editable code runs in the reader's browser (Pyodide), not at build time.
+engine: markdown
+pyodide:
+  packages:
+    - opencv-python
+    - matplotlib
+    - numpy
+---
+
+# Motion Fields and Optical Flow {#sec-optical-flow}
+
+```{=html}
+<link rel="stylesheet" href="../assets/optical-flow.css">
+```
+
+Every chapter so far has treated images one at a time, or as a few snapshots taken from different places. A robot's camera does not take snapshots. It records a stream of frames, typically 30 to several hundred per second, and between two consecutive frames almost everything in the image shifts by a few pixels. That shift is information. It tells the robot how it is moving, what in the scene is moving on its own, and how soon it will hit something, often before it knows anything about the 3D structure of the world.
+
+The 2D pattern of apparent motion in an image is called **optical flow**. It is one of the oldest ideas in computer vision and one of the most useful on small robots, because it can be computed from two frames with very little memory and no map. Insects rely on it to fly through clutter, and so does the optical mouse on your desk. In @sec-stereo we matched points between two cameras placed side by side; here the two images come from one camera at two instants, and the match can be any small displacement, not just one along an epipolar line.
+
+::: {.callout-note appearance="simple"}
+**In this chapter.** Motion field versus optical flow · the aperture problem · brightness constancy and the optical flow constraint · Lucas-Kanade and the structure tensor · coarse-to-fine pyramids · Horn-Schunck · measuring and showing flow · the motion field of a moving camera · focus of expansion and time to contact · scene flow · flow in robots and in nature · learned optical flow · flow on tiny robots.
+:::
+
+## Motion field and optical flow
+
+Consider a point in the scene. Either the point moves, or the camera moves, or both. In both cases, its projection on the image plane moves too. The 2D velocity of the projection of every scene point is called the **motion field**. It is a purely geometric quantity: it follows from the 3D motion and the camera model of @sec-camera-models, and it exists whether or not we can see it.
+
+We never observe the motion field directly. What a camera records is brightness, so what we can measure is how the **brightness pattern** moves from one frame to the next. That apparent motion is the **optical flow**. Ideally the two are equal. Often they are close. But they can differ completely, and it pays to know when.
+
+The figure below shows a sphere and two sets of arrows. Gold arrows on the left are the true motion field. Red arrows on the right are optical flow, measured from consecutive frames with the Lucas-Kanade method developed later in this chapter.
+
+```{=html}
+<div class="sim of-sphere" id="of-sphere">
+  <canvas class="of-canvas"></canvas>
+  <div class="sim__controls">
+    <span class="sim__group">Scene
+      <button type="button" class="btn btn-gold-outline btn-sm is-on" data-scene="texture">Textured sphere spins</button>
+      <button type="button" class="btn btn-gold-outline btn-sm" data-scene="plain">Plain sphere spins</button>
+      <button type="button" class="btn btn-gold-outline btn-sm" data-scene="light">Sphere still, light moves</button>
+    </span>
+  </div>
+  <p class="sim__readout"></p>
+</div>
+```
+
+The plain spinning sphere has a motion field but no optical flow: its image never changes. The still sphere under a moving light has no motion field, yet its shading slides across the image and produces optical flow. Shadows, reflections and flickering lights cause the same mismatch in real scenes. For textured, matte, steadily lit surfaces, which describe most of the world most of the time, optical flow is an excellent observable stand-in for the motion field, and the rest of this chapter relies on that.
+
+Optical flow is usually stored as an image of 2D vectors $(u, v)$, one per pixel, giving the displacement in pixels from frame $t$ to frame $t+1$.
+
+## The aperture problem
+
+Even when flow equals the motion field, a local view cannot always recover it. Look at a moving edge through a small hole. Any motion along the edge leaves what you see unchanged, so the only component you can measure is the one **perpendicular to the edge**, called the **normal flow**. This is the **aperture problem**. Drag the aperture around the moving square below, and set the true direction of motion with the slider.
+
+```{=html}
+<div class="sim" id="of-aperture">
+  <canvas class="of-canvas of-drag"></canvas>
+  <div class="sim__controls">
+    <label>True direction <input type="range" name="dir" min="0" max="345" step="15" value="0"><output></output></label>
+    <label>Aperture radius <input type="range" name="rad" min="20" max="120" step="2" value="46"><output></output></label>
+    <span class="sim__group">Put it on
+      <button type="button" class="btn btn-gold-outline btn-sm" data-spot="216,134">An edge</button>
+      <button type="button" class="btn btn-gold-outline btn-sm" data-spot="262,51">A corner</button>
+      <button type="button" class="btn btn-gold-outline btn-sm" data-spot="300,180">The middle</button>
+    </span>
+    <button type="button" class="btn btn-gold-outline btn-sm" data-action="reveal">Show the whole scene</button>
+  </div>
+  <p class="sim__readout"></p>
+</div>
+```
+
+The aperture problem is not a flaw of any particular algorithm; it is a property of the information available. Our own visual system suffers from it. The **barber pole illusion**, in which diagonal stripes on a rotating cylinder appear to move up instead of sideways, happens because the stripes are seen through the long, narrow aperture of the pole's outline. A neuron in the early visual cortex looks at the world through a small receptive field and faces exactly the problem in the figure. The fix, for brains and algorithms alike, is to combine evidence from a region that contains more than one edge direction, such as a corner or a textured patch.
+
+## Brightness constancy and the optical flow constraint {#sec-of-constraint}
+
+To measure flow we need an assumption that links the two frames. The standard one is **brightness constancy**: a scene point keeps the same brightness as it moves. If a pixel at $(x, y)$ at time $t$ moves by $(\delta x, \delta y)$ in time $\delta t$, then
+
+$$
+I(x + \delta x,\; y + \delta y,\; t + \delta t) = I(x, y, t).
+$$
+
+The second assumption is **small motion**: the displacement is small enough that a first-order Taylor expansion of the left side is accurate,
+
+$$
+I(x + \delta x, y + \delta y, t + \delta t) \approx I(x, y, t) + I_x\,\delta x + I_y\,\delta y + I_t\,\delta t,
+$$
+
+where $I_x, I_y$ are the image gradients of @sec-features and $I_t$ is the change in brightness over time. Subtracting the two and dividing by $\delta t$ gives the **optical flow constraint equation**, with $u = \delta x / \delta t$ and $v = \delta y / \delta t$:
+
+$$
+I_x\, u + I_y\, v + I_t = 0, \qquad \text{or} \qquad \nabla I \cdot \mathbf{u} = -I_t .
+$$
+
+This is one equation in two unknowns. In the $(u, v)$ plane it describes a **line**: every flow vector on that line explains the brightness change at this pixel equally well. The equation fixes only the component of flow along the gradient, which is perpendicular to the edge. It is the aperture problem written in algebra:
+
+$$
+u_\perp = \frac{-I_t}{\lVert \nabla I \rVert}.
+$$
+
+Two more ingredients are needed to get a unique answer. Lucas-Kanade assumes that nearby pixels share the same flow; Horn-Schunck assumes that the flow varies smoothly across the whole image. Both are forms of the **spatial coherence** assumption.
+
+## Lucas-Kanade {#sec-of-lk}
+
+Bruce Lucas and Takeo Kanade (1981) assumed that the flow is constant within a small window, say $15 \times 15$ pixels around the point of interest. Each pixel $i$ in the window contributes one constraint, so we get many equations for the same two unknowns:
+
+$$
+\underbrace{\begin{bmatrix} I_x(\mathbf{p}_1) & I_y(\mathbf{p}_1) \\ \vdots & \vdots \\ I_x(\mathbf{p}_n) & I_y(\mathbf{p}_n) \end{bmatrix}}_{A}
+\begin{bmatrix} u \\ v \end{bmatrix} =
+-\underbrace{\begin{bmatrix} I_t(\mathbf{p}_1) \\ \vdots \\ I_t(\mathbf{p}_n) \end{bmatrix}}_{\mathbf{b}} .
+$$
+
+The least-squares solution satisfies the normal equations $A^\top A\, \mathbf{u} = -A^\top \mathbf{b}$:
+
+$$
+\underbrace{\begin{bmatrix} \sum I_x^2 & \sum I_x I_y \\ \sum I_x I_y & \sum I_y^2 \end{bmatrix}}_{M}
+\begin{bmatrix} u \\ v \end{bmatrix} =
+-\begin{bmatrix} \sum I_x I_t \\ \sum I_y I_t \end{bmatrix}.
+$$
+
+The matrix $M$ is the **structure tensor** from the Harris corner detector of @sec-features. Its eigenvalues $\lambda_1 \ge \lambda_2$ say whether the system can be solved reliably:
+
+- **Flat region:** $\lambda_1 \approx \lambda_2 \approx 0$. No gradient, no information.
+- **Edge:** $\lambda_1 \gg \lambda_2 \approx 0$. All gradients point the same way, $M$ is nearly singular, and only the normal flow is known.
+- **Corner or texture:** both eigenvalues large. The flow is well determined.
+
+So the points that are good to track are exactly the points that are good corners. This is why the classic **KLT tracker** (Kanade, Lucas and Tomasi) picks features with a large $\lambda_2$, the criterion of Shi and Tomasi, and then follows them with Lucas-Kanade.
+
+The figure applies Lucas-Kanade to a rendered pair in which the camera moves forward and the middle drone slides left and turns. Because the frames were rendered in Blender, the true flow of every pixel is known. Drag the window over the left image. On the right, each blue line is the constraint from one pixel of the window, plotted in the $(u, v)$ plane. The gold ellipse is the uncertainty implied by the structure tensor: wide along directions with little gradient, narrow along directions with strong gradient.
+
+```{=html}
+<div class="sim" id="of-lk">
+  <div class="of-duo">
+    <figure><canvas class="of-drag"></canvas><figcaption>Frame 0 with the window. Green: true flow; red: estimate (both drawn 3× longer).</figcaption></figure>
+    <figure><canvas class="of-plot"></canvas><figcaption>Flow space (u, v), ±16 px</figcaption></figure>
+  </div>
+  <ul class="of-legend">
+    <li style="--dot:#5aa9ff">one pixel's constraint line</li>
+    <li style="--dot:#3ecf8e">true flow</li>
+    <li style="--dot:#cfb97d">one level, no warping</li>
+    <li style="--dot:#ff6b6b">coarse to fine</li>
+  </ul>
+  <div class="sim__controls">
+    <label>Window <input type="range" name="half" min="2" max="15" step="1" value="7"><output></output></label>
+    <label>Pyramid levels <input type="range" name="levels" min="1" max="4" step="1" value="3"><output></output></label>
+    <span class="sim__group">Try
+      <button type="button" class="btn btn-gold-outline btn-sm" data-spot="470,112">Brick wall</button>
+      <button type="button" class="btn btn-gold-outline btn-sm" data-spot="600,250">Wood grain</button>
+      <button type="button" class="btn btn-gold-outline btn-sm" data-spot="405,185">Moving drone</button>
+      <button type="button" class="btn btn-gold-outline btn-sm" data-spot="150,290">Near drone</button>
+    </span>
+  </div>
+  <p class="sim__readout"></p>
+</div>
+```
+
+Things to notice:
+
+- On the **brick wall**, far from the camera, the flow is under a pixel and the lines cross cleanly near the green dot. One level is enough.
+- On the **wood grain**, the texture runs in one direction. The constraint lines are nearly parallel and the ellipse is a long sliver: a real image with an aperture problem.
+- On the **near drone**, the true motion is about 12 pixels. The single-level estimate (gold) is far off, because the Taylor expansion behind each constraint line only holds for motions of a pixel or two. The coarse-to-fine estimate (red) recovers it.
+
+### Large motion: coarse to fine
+
+The small-motion assumption breaks whenever objects move more than a pixel or two between frames, which is common: fast robots, close objects, low frame rates. The standard fix is an **image pyramid** (@sec-features). Downsampling the image by 2 also halves every displacement. At the coarsest level, a 12-pixel motion becomes 1.5 pixels, small enough to estimate. Then:
+
+1. Estimate the flow at the coarsest level.
+2. Move to the next finer level, double the flow, and **warp** the second image by it so that the remaining motion is small.
+3. Estimate the small residual flow, add it, and repeat down to full resolution.
+
+At each level, Lucas-Kanade is usually iterated a few times, re-warping after each step, which is a Gauss-Newton solve of the nonlinear brightness constancy equation. This pyramidal, iterative version (described by Jean-Yves Bouguet in 2000) is what OpenCV's `calcOpticalFlowPyrLK` implements. The warp-then-refine idea comes back later in this chapter, inside learned networks.
+
+### Try it: the structure tensor decides
+
+The cell below builds three tiny images, a corner, a slanted edge and a flat patch, shifts each by the same subpixel motion, and runs Lucas-Kanade on a window at the center. It prints the eigenvalues of $M$ (per pixel) and the estimate.
+
+```{pyodide}
+import numpy as np
+
+rng = np.random.default_rng(0)
+N = 64
+y, x = np.mgrid[0:N, 0:N].astype(float)
+
+def scene(dx, dy):
+    """Three small test images, each shifted by (dx, dy) pixels."""
+    X, Y = x - dx, y - dy
+    corner = 200.0 / (1 + np.exp(-(X - 32))) / (1 + np.exp(-(Y - 32)))   # a bright quadrant
+    edge = 200.0 / (1 + np.exp(-(X - 0.6 * Y - 14)))                     # one slanted edge
+    flat = np.full_like(X, 120.0)                                        # no texture at all
+    return {"corner": corner, "edge": edge, "flat": flat}
+
+true = (0.6, 0.3)
+I0, I1 = scene(0, 0), scene(*true)
+
+def lucas_kanade(A, B, cx=32, cy=32, half=7, noise=0.5):
+    A = A + rng.normal(0, noise, A.shape)
+    B = B + rng.normal(0, noise, B.shape)
+    Iy, Ix = np.gradient(A)
+    It = B - A
+    win = (slice(cy - half, cy + half + 1), slice(cx - half, cx + half + 1))
+    ix, iy, it = Ix[win].ravel(), Iy[win].ravel(), It[win].ravel()
+    M = np.array([[ix @ ix, ix @ iy], [ix @ iy, iy @ iy]])        # structure tensor
+    b = -np.array([ix @ it, iy @ it])
+    lam = np.linalg.eigvalsh(M)[::-1] / ix.size
+    # pinv ignores directions with almost no gradient, instead of guessing along them
+    uv = np.linalg.pinv(M, rcond=0.01) @ b
+    return lam, uv
+
+print(f"true motion: u = {true[0]}, v = {true[1]}\n")
+print(f"{'window':8} {'lambda1':>9} {'lambda2':>9}   estimate (u, v)")
+for name in ("corner", "edge", "flat"):
+    lam, uv = lucas_kanade(I0[name], I1[name])
+    print(f"{name:8} {lam[0]:9.2f} {lam[1]:9.3f}   ({uv[0]:6.2f}, {uv[1]:6.2f})")
+
+# Along an edge only the normal component survives. For the slanted edge it is:
+n = np.array([1.0, -0.6]) / np.hypot(1.0, 0.6)
+print()
+print("normal component of the true motion for the edge:", np.round((np.array(true) @ n) * n, 2))
+```
+
+The corner recovers the true motion. The edge recovers exactly the normal component and nothing more. The flat patch returns noise: its eigenvalues are tiny, so any answer is as good as another.
+
+::: {.callout-tip}
+## Exercise
+Increase `noise` to 5 and run the cell a few times. Which window's estimate becomes unreliable first, and how could you tell from the eigenvalues alone, without knowing the true motion?
+:::
+
+## Horn-Schunck: smoothness everywhere {#sec-of-hs}
+
+Lucas-Kanade is local: each window is solved on its own, and windows without texture are left empty. Berthold Horn and Brian Schunck (1981) took the opposite, **global** approach. They look for the flow field $(u, v)$ over the whole image that minimizes
+
+$$
+E(u, v) = \iint \underbrace{\big(I_x u + I_y v + I_t\big)^2}_{\text{data term}} + \alpha^2 \underbrace{\big(\lVert \nabla u \rVert^2 + \lVert \nabla v \rVert^2\big)}_{\text{smoothness term}} \, dx\, dy .
+$$
+
+The data term asks every pixel to satisfy the constraint equation; the smoothness term asks neighboring pixels to have similar flow. The weight $\alpha$ sets the balance. Where the image has texture, the data term dominates. In flat regions, the smoothness term **fills in** the flow from the surroundings, so Horn-Schunck produces a dense field with no holes.
+
+Setting the derivatives of $E$ to zero (the Euler-Lagrange equations) and approximating the Laplacian by $\bar u - u$, where $\bar u$ is the average of the four neighbors, leads to a simple iteration:
+
+$$
+u^{k+1} = \bar u^{k} - I_x \frac{I_x \bar u^{k} + I_y \bar v^{k} + I_t}{\alpha^2 + I_x^2 + I_y^2}, \qquad
+v^{k+1} = \bar v^{k} - I_y \frac{I_x \bar u^{k} + I_y \bar v^{k} + I_t}{\alpha^2 + I_x^2 + I_y^2}.
+$$
+
+Each step moves the local average toward the nearest point on the pixel's constraint line. Information spreads one pixel per iteration, so large flat regions need many iterations. Horn-Schunck shares the small-motion limit of Lucas-Kanade and uses the same coarse-to-fine remedy.
+
+The figure computes dense flow on the full rendered pair with either method and compares it with the true flow. The **average end-point error** (EPE), the mean length of the difference between the estimated and true flow vectors, is the standard accuracy measure for optical flow.
+
+```{=html}
+<div class="sim" id="of-dense">
+  <canvas class="of-canvas"></canvas>
+  <div class="sim__controls">
+    <span class="sim__group">Method
+      <button type="button" class="btn btn-gold-outline btn-sm" data-method="lk">Lucas-Kanade</button>
+      <button type="button" class="btn btn-gold-outline btn-sm is-on" data-method="hs">Horn-Schunck</button>
+    </span>
+    <span class="sim__group">Show
+      <button type="button" class="btn btn-gold-outline btn-sm is-on" data-show="flow">Estimated flow</button>
+      <button type="button" class="btn btn-gold-outline btn-sm" data-show="truth">True flow</button>
+      <button type="button" class="btn btn-gold-outline btn-sm" data-show="error">Error</button>
+      <button type="button" class="btn btn-gold-outline btn-sm" data-show="arrows">Arrows</button>
+    </span>
+  </div>
+  <div class="sim__controls">
+    <label>Pyramid levels <input type="range" name="levels" min="1" max="4" step="1" value="4"><output></output></label>
+    <label>Smoothness α <input type="range" name="alpha" min="1" max="60" step="1" value="4"><output></output></label>
+    <label>Iterations per level <input type="range" name="iters" min="5" max="300" step="5" value="200"><output></output></label>
+    <label>Window <input type="range" name="win" min="1" max="10" step="1" value="4"><output></output></label>
+  </div>
+  <p class="sim__readout"></p>
+</div>
+```
+
+Some experiments:
+
+- Set **pyramid levels** to 1. Both methods fail near the camera, where motion is largest, and the error image lights up at the bottom.
+- With Horn-Schunck, lower $\alpha$ to 1: the flow becomes noisy, because each pixel trusts its own single constraint. Raise it to 60: the field becomes very smooth and the moving drone's boundary blurs into its surroundings.
+- With Lucas-Kanade, a small window leaves many holes on the floor, where the grain runs one way, and a large window fills them but blurs the motion boundaries.
+- Look at the **Error** view. The largest errors sit at the bottom corners, where the floor is close, moves fastest, and has grain running in one direction: a large motion and an aperture problem at once. Horn-Schunck fills these regions with smooth guesses, while Lucas-Kanade leaves them empty and so scores better on the pixels it does answer.
+
+Neither method is perfect at **motion boundaries**, where the drone moves differently from the floor behind it, and at **occlusions**, where pixels visible in one frame are hidden in the next. Squared penalties in the energy smear flow across such boundaries. Modern variational methods use robust penalties, such as total variation, that allow sharp jumps. They also add terms for brightness changes and for matched features, which handle large motions. Gunnar Farnebäck's method (2003), available in OpenCV as `calcOpticalFlowFarneback`, takes yet another route: it fits a quadratic polynomial to each neighborhood and finds the shift between the polynomials of the two frames.
+
+### Try it: Horn-Schunck in a few lines
+
+The cell below creates a textured image, moves it with a known flow (a small rotation plus a zoom, as when a camera turns and moves forward), and compares a single-level Horn-Schunck with OpenCV's Farnebäck method.
+
+```{pyodide}
+import numpy as np
+import cv2
+import matplotlib.pyplot as plt
+
+rng = np.random.default_rng(3)
+H, W = 120, 160
+# a smooth random texture
+I0 = cv2.GaussianBlur(rng.uniform(0, 255, (H, W)).astype(np.float32), (0, 0), 2.0)
+I0 = cv2.normalize(I0, None, 0, 255, cv2.NORM_MINMAX)
+
+# true flow: the camera turns a little and moves forward (rotation plus zoom)
+y, x = np.mgrid[0:H, 0:W].astype(np.float32)
+cx, cy = W / 2, H / 2
+angle, zoom = np.deg2rad(1.5), 0.02
+u_true = (np.cos(angle) * (1 + zoom) - 1) * (x - cx) - np.sin(angle) * (1 + zoom) * (y - cy)
+v_true = np.sin(angle) * (1 + zoom) * (x - cx) + (np.cos(angle) * (1 + zoom) - 1) * (y - cy)
+# I1(x + u, y + v) = I0(x, y): sample I0 backward (accurate for small, smooth flow)
+I1 = cv2.remap(I0, (x - u_true).astype(np.float32), (y - v_true).astype(np.float32),
+               cv2.INTER_LINEAR, borderMode=cv2.BORDER_REFLECT)
+
+def horn_schunck(A, B, alpha=8.0, iters=300):
+    Iy, Ix = np.gradient((A + B) / 2)
+    It = B - A
+    u = np.zeros_like(A); v = np.zeros_like(A)
+    avg = lambda f: 0.25 * (np.roll(f, 1, 0) + np.roll(f, -1, 0) + np.roll(f, 1, 1) + np.roll(f, -1, 1))
+    for _ in range(iters):
+        ub, vb = avg(u), avg(v)
+        k = (Ix * ub + Iy * vb + It) / (alpha**2 + Ix**2 + Iy**2)
+        u, v = ub - Ix * k, vb - Iy * k
+    return u, v
+
+u_hs, v_hs = horn_schunck(I0, I1)
+fb = cv2.calcOpticalFlowFarneback(I0.astype(np.uint8), I1.astype(np.uint8), None, 0.5, 3, 15, 3, 5, 1.2, 0)
+
+def epe(u, v):
+    m = (slice(8, -8), slice(8, -8))          # ignore the borders
+    return np.mean(np.hypot(u - u_true, v - v_true)[m])
+
+def to_color(u, v, max_mag=2.5):
+    hsv = np.zeros((H, W, 3), np.uint8)
+    hsv[..., 0] = (np.degrees(np.arctan2(-v, -u)) + 180) / 2
+    hsv[..., 1] = np.clip(np.hypot(u, v) / max_mag * 255, 0, 255)
+    hsv[..., 2] = 255
+    return cv2.cvtColor(hsv, cv2.COLOR_HSV2RGB)
+
+print(f"largest true motion: {np.hypot(u_true, v_true).max():.2f} px")
+print(f"Horn-Schunck end-point error: {epe(u_hs, v_hs):.3f} px")
+print(f"Farneback end-point error:    {epe(fb[..., 0], fb[..., 1]):.3f} px")
+
+fig, ax = plt.subplots(1, 4, figsize=(16, 3.4))
+ax[0].imshow(I0, cmap="gray"); ax[0].set_title("Frame 0")
+ax[1].imshow(to_color(u_true, v_true)); ax[1].set_title("True flow")
+ax[2].imshow(to_color(u_hs, v_hs)); ax[2].set_title("Horn-Schunck")
+ax[3].imshow(to_color(fb[..., 0], fb[..., 1])); ax[3].set_title("Farneback (OpenCV)")
+for a in ax: a.axis("off")
+plt.tight_layout()
+plt.show()
+```
+
+::: {.callout-tip}
+## Exercise
+Change `alpha` in `horn_schunck` to 1, 4, 20 and 50, and record the end-point error each time. Then set `zoom = 0.06`, which roughly triples the largest motion. Why does Horn-Schunck now do much worse, while Farnebäck, which uses a pyramid, copes?
+:::
+
+## Showing flow: the color wheel
+
+A field of arrows is easy to read but hides detail; one arrow per pixel would be an unreadable mess. The standard alternative, introduced with the Middlebury optical flow benchmark (Baker and colleagues, 2011), maps each flow vector to a color: **hue** gives the direction and **saturation** gives the speed, so still pixels are white. Drag the arrow on the wheel, and pick a flow field to see its coloring.
+
+```{=html}
+<div class="sim" id="of-wheel">
+  <div class="of-duo of-duo--even">
+    <figure><canvas class="of-drag of-plot"></canvas><figcaption>The color wheel</figcaption></figure>
+    <figure><canvas class="of-plot"></canvas><figcaption>A flow field, colored</figcaption></figure>
+  </div>
+  <div class="sim__controls">
+    <span class="sim__group">Field
+      <button type="button" class="btn btn-gold-outline btn-sm is-on" data-field="zoom">Moving forward</button>
+      <button type="button" class="btn btn-gold-outline btn-sm" data-field="rotate">Rolling</button>
+      <button type="button" class="btn btn-gold-outline btn-sm" data-field="right">Panning</button>
+      <button type="button" class="btn btn-gold-outline btn-sm" data-field="object">A moving object</button>
+    </span>
+  </div>
+  <p class="sim__readout"></p>
+</div>
+```
+
+With this key, the true flow of our rendered pair (the **True flow** view in the previous figure) reads at a glance: colors swirl around a white center where the camera is heading, and the middle drone stands out as one uniform color because it moves as a rigid body, differently from everything around it.
+
+## The motion field of a moving camera {#sec-of-egomotion}
+
+Now we go back from measurement to geometry. Suppose the camera moves through a static scene with translational velocity $\mathbf{T} = (T_x, T_y, T_z)$ and angular velocity $\boldsymbol{\omega} = (\omega_x, \omega_y, \omega_z)$. Relative to the camera, a scene point $\mathbf{P} = (X, Y, Z)$ then moves with velocity
+
+$$
+\dot{\mathbf{P}} = -\mathbf{T} - \boldsymbol{\omega} \times \mathbf{P}.
+$$
+
+Differentiating the pinhole projection $x = fX/Z$, $y = fY/Z$ (with image coordinates measured from the principal point) gives the **motion field equation**:
+
+$$
+\begin{bmatrix} u \\ v \end{bmatrix} =
+\underbrace{\frac{1}{Z} \begin{bmatrix} -f & 0 & x \\ 0 & -f & y \end{bmatrix} \mathbf{T}}_{\text{translational part}}
+\; + \;
+\underbrace{\begin{bmatrix} \dfrac{xy}{f} & -\left(f + \dfrac{x^2}{f}\right) & y \\[2mm] f + \dfrac{y^2}{f} & -\dfrac{xy}{f} & -x \end{bmatrix} \boldsymbol{\omega}}_{\text{rotational part}} .
+$$
+
+Two facts in this equation shape everything that follows.
+
+1. **The rotational part does not depend on depth.** A camera that only rotates sees the same flow whatever the scene looks like. Pure rotation tells us nothing about the 3D structure, just as a pure rotation gave no stereo baseline in @sec-stereo.
+2. **The translational part scales with $1/Z$.** Near points move fast and far points move slowly. This is **motion parallax**, and it is the source of depth from motion. But only the ratio $\mathbf{T}/Z$ appears: doubling the speed and the size of the world gives the same flow. This is the scale ambiguity of @sec-sfm in differential form.
+
+The figure shows the motion field of a camera 1.2 m above a floor, looking at a wall 12 m away. Set the translation (in meters per frame) and rotation (in degrees per frame), and switch between the total flow and its two parts. Arrows are drawn three times longer than the motion per frame. Hover over the image to read the depth and time to contact.
+
+```{=html}
+<div class="sim" id="of-ego">
+  <canvas class="of-canvas"></canvas>
+  <div class="sim__controls">
+    <span class="sim__group">Show
+      <button type="button" class="btn btn-gold-outline btn-sm is-on" data-part="total">Total</button>
+      <button type="button" class="btn btn-gold-outline btn-sm" data-part="trans">Translation only</button>
+      <button type="button" class="btn btn-gold-outline btn-sm" data-part="rot">Rotation only</button>
+    </span>
+    <span class="sim__group">Presets
+      <button type="button" class="btn btn-gold-outline btn-sm" data-preset='{"tz":0.1}'>Fly forward</button>
+      <button type="button" class="btn btn-gold-outline btn-sm" data-preset='{"tx":0.06}'>Strafe right</button>
+      <button type="button" class="btn btn-gold-outline btn-sm" data-preset='{"wy":1}'>Turn (yaw)</button>
+      <button type="button" class="btn btn-gold-outline btn-sm" data-preset='{"tz":0.1,"wy":0.6}'>Forward while turning</button>
+      <button type="button" class="btn btn-gold-outline btn-sm" data-preset='{"tz":0.08,"tx":0.03,"ty":0.01}'>Forward and sideways</button>
+    </span>
+  </div>
+  <div class="sim__controls">
+    <label>Tx <input type="range" name="tx" min="-0.1" max="0.1" step="0.01" value="0"><output></output></label>
+    <label>Ty <input type="range" name="ty" min="-0.1" max="0.1" step="0.01" value="0"><output></output></label>
+    <label>Tz <input type="range" name="tz" min="-0.15" max="0.15" step="0.01" value="0.1"><output></output></label>
+    <label>ωx (pitch) <input type="range" name="wx" min="-2" max="2" step="0.1" value="0"><output></output></label>
+    <label>ωy (yaw) <input type="range" name="wy" min="-2" max="2" step="0.1" value="0"><output></output></label>
+    <label>ωz (roll) <input type="range" name="wz" min="-2" max="2" step="0.1" value="0"><output></output></label>
+  </div>
+  <p class="sim__readout"></p>
+</div>
+```
+
+### The focus of expansion
+
+When the camera translates with $T_z \neq 0$ and does not rotate, all flow vectors radiate from a single image point, the **focus of expansion** (FOE):
+
+$$
+(x_0, y_0) = \left(\frac{f\,T_x}{T_z},\; \frac{f\,T_y}{T_z}\right).
+$$
+
+It is the image of the direction of travel: the point the camera is heading toward. Moving backward turns it into a focus of contraction. Finding the FOE gives the direction of translation without knowing any depth, which is why it is so useful to animals and robots. Add a little rotation in the figure and the flow no longer radiates from the FOE; the rotational part must be estimated and removed first. Separating the two from measured flow is the classic **egomotion** problem. Robots usually take the shortcut of measuring rotation with a gyroscope and subtracting its flow, a step called **derotation**.
+
+### Time to contact
+
+For a point moving straight toward the camera, the translational flow at image distance $r$ from the FOE has length $\dot r = r\, T_z / Z$. Their ratio is
+
+$$
+\tau = \frac{r}{\dot r} = \frac{Z}{T_z},
+$$
+
+the **time to contact**: how many frames (or seconds) until the camera reaches that point at its current speed. Remarkably, $\tau$ needs neither the distance $Z$ nor the speed $T_z$, only the image and how fast it changes. Equivalently, for an approaching object of angular size $\theta$, $\tau \approx \theta / \dot\theta$.
+
+Biologists found this quantity in a plummeting seabird. Gannets dive into the sea from up to 30 m and fold their wings just before entering the water. David Lee and Paul Reddish (1981) showed from films of the dives that the timing of the fold is explained by $\tau$ reaching a threshold, not by distance or speed. The figure simulates such a dive. The bird sees only the growing image of a fish below and folds its wings when its estimate of $\tau$ drops below the threshold.
+
+```{=html}
+<div class="sim" id="of-ttc">
+  <div class="of-duo">
+    <figure><canvas class="of-canvas"></canvas><figcaption>What the diver sees</figcaption></figure>
+    <figure><canvas class="of-plot"></canvas><figcaption>Gold: τ from the image. Green: true time to contact. Red: fold threshold.</figcaption></figure>
+  </div>
+  <div class="sim__controls">
+    <label>Dive speed <input type="range" name="speed" min="6" max="24" step="1" value="14"><output></output></label>
+    <label>Fold when τ drops below <input type="range" name="fold" min="0.1" max="1.2" step="0.05" value="0.6"><output></output></label>
+    <button type="button" class="btn btn-gold-outline btn-sm" data-action="dive">Dive</button>
+  </div>
+  <p class="sim__readout"></p>
+</div>
+```
+
+Whatever the dive speed, the wings fold the same time before impact. Flies use looming cues like this to land and to escape a swatter, and simple collision-warning systems in cars and drones do the same.
+
+### Scene flow
+
+Optical flow is the 2D projection of a 3D motion. When depth is available, from stereo or a depth camera, we can estimate the 3D motion of every point directly. This 3D vector field is called **scene flow**. It separates motions that look identical in 2D, such as an object moving toward the camera and one growing in size, and it is widely used in autonomous driving, where lidar and stereo provide the depth.
+
+## Flow in robots and in nature
+
+Optical flow is cheap to compute, needs no map, and responds to exactly what a moving agent cares about: its own motion and what is about to hit it. That makes it common in small machines and small animals.
+
+- **Optical mice.** An optical mouse contains a tiny camera that images the desk surface thousands of times per second. A dedicated chip computes the average shift between frames, which is the cursor motion. It is the simplest possible flow sensor: one vector for the whole image.
+- **Drones.** Many drones carry a downward-looking **flow sensor** to hold position indoors, where GPS is not available. When the drone drifts right, the floor texture slides left. Because flow measures $T/Z$, the sensor is paired with a rangefinder to convert pixels per second into meters per second. The surface needs texture, so these sensors struggle over smooth floors and calm water.
+- **Video compression.** Codecs such as H.264 predict each frame from the previous one by shifting blocks of pixels, and store only the **motion vectors** and the small leftover differences. Block motion vectors are a coarse optical flow.
+- **Insects.** Honeybees flying down a corridor balance the flow speeds seen by their two eyes, which centers them between the walls. Mandyam Srinivasan and colleagues showed this by moving one wall's pattern: the bees shifted toward or away from it. Bees also land smoothly by keeping the flow of the approaching surface constant, so they slow down automatically as it gets closer.
+
+You can try a flow sensor yourself. The demo runs Farnebäck's dense optical flow on your webcam with OpenCV.js. Wave a hand, move toward the camera, or pan the camera across the room. The video stays on your device.
+
+```{=html}
+<div class="sim of-webcam" id="of-webcam">
+  <video playsinline muted></video>
+  <canvas class="of-canvas"></canvas>
+  <div class="sim__controls">
+    <button type="button" class="btn btn-gold-outline btn-sm">Start camera</button>
+    <span class="sim__group">Show
+      <button type="button" class="btn btn-gold-outline btn-sm is-on" data-view="color">Color-coded flow</button>
+      <button type="button" class="btn btn-gold-outline btn-sm" data-view="arrows">Arrows</button>
+    </span>
+  </div>
+  <p class="sim__readout">Press Start camera. OpenCV.js loads on first use.</p>
+</div>
+```
+
+### Flow for agile flight
+
+The author's own research has used optical flow as the main sense for small, fast flying robots. Two examples:
+
+- **GapFlyt** (Singh, Sanket and colleagues, *IEEE Robotics and Automation Letters*, 2018) flies a quadrotor through a gap of unknown shape in a wall. Instead of building a 3D map, the drone makes a small deliberate motion, an idea called **active vision**, and computes optical flow. Because of parallax, the far background seen through the gap moves more slowly than the nearby wall, so the gap appears as a region of different flow. The drone tracks that region and flies through it.
+- **EVDodgeNet** (Sanket, Parameshwara, Singh and colleagues, *IEEE ICRA*, 2020) dodges objects thrown at a quadrotor, using an event camera (@sec-computational-imaging). Neural networks estimate the drone's own motion, segment the pixels that move differently from it, and estimate their motion so the drone can move out of the way.
+
+```{=html}
+<figure class="clip-grid of-clips">
+  <video src="media/optical-flow/gapflyt.mp4" poster="media/optical-flow/gapflyt.jpg" autoplay muted loop playsinline></video>
+  <video src="media/optical-flow/evdodge.mp4" poster="media/optical-flow/evdodge.jpg" autoplay muted loop playsinline></video>
+  <figcaption>Left: GapFlyt, a quadrotor flying through an unknown gap found with optical flow. Right: EVDodgeNet, a quadrotor dodging thrown objects with an event camera. Both shown at reduced speed.</figcaption>
+</figure>
+```
+
+## Learned optical flow {#sec-of-learned}
+
+Classical methods rest on brightness constancy, small motion and smoothness, and all three break regularly: lighting changes, fast motion, motion boundaries, textureless regions. Since 2015, neural networks trained on large synthetic datasets have overtaken them on accuracy. Most of these networks rebuild the classical pipeline from learned parts.
+
+**Matching with a cost volume.** The core operation is the **correlation** of features between the two frames. For each pixel $\mathbf{x}$ in frame 1, compare its feature vector with the features of frame 2 at a set of offsets $\boldsymbol{\delta}$:
+
+$$
+C(\mathbf{x}, \boldsymbol{\delta}) = \big\langle f_1(\mathbf{x}),\; f_2(\mathbf{x} + \boldsymbol{\delta}) \big\rangle .
+$$
+
+The stack of these scores over all pixels and offsets is the **cost volume**, a learned version of the matching cost of @sec-stereo, but searched in two dimensions. The figure shows one slice of a cost volume on our rendered pair, using normalized cross-correlation of raw $7 \times 7$ patches instead of learned features. Click a pixel and change the search radius and the resolution.
+
+```{=html}
+<div class="sim" id="of-cost">
+  <div class="of-duo">
+    <figure><canvas class="of-drag"></canvas><figcaption>Frame 0 and the search window. Green: true flow; red: best match.</figcaption></figure>
+    <figure><canvas class="of-plot"></canvas><figcaption>Correlation at every offset in the window</figcaption></figure>
+  </div>
+  <div class="sim__controls">
+    <label>Search radius <input type="range" name="radius" min="1" max="12" step="1" value="4"><output></output></label>
+    <span class="sim__group">Resolution
+      <button type="button" class="btn btn-gold-outline btn-sm is-on" data-level="0">Full</button>
+      <button type="button" class="btn btn-gold-outline btn-sm" data-level="1">1/2</button>
+      <button type="button" class="btn btn-gold-outline btn-sm" data-level="2">1/4</button>
+    </span>
+    <span class="sim__group">Try
+      <button type="button" class="btn btn-gold-outline btn-sm" data-spot="470,112">Brick wall</button>
+      <button type="button" class="btn btn-gold-outline btn-sm" data-spot="405,185">Moving drone</button>
+      <button type="button" class="btn btn-gold-outline btn-sm" data-spot="150,290">Near drone</button>
+    </span>
+  </div>
+  <p class="sim__readout"></p>
+</div>
+```
+
+The search radius is a hard limit: a match outside the window cannot be found, and doubling the radius quadruples the work. The repeating bricks also produce several strong peaks, the same ambiguity that troubled feature matching in @sec-sfm. Networks deal with both problems in different ways.
+
+```{=html}
+<svg class="of-nets" viewBox="0 0 900 230" role="img" aria-label="Four learned optical flow networks in order: FlowNet 2015, PWC-Net 2018, RAFT 2020 and TinyFlow 2026">
+  <path class="link" d="M210 95 H235 M430 95 H455 M650 95 H675"/>
+  <rect class="box" x="10" y="20" width="200" height="150" rx="14"/>
+  <text class="y" x="26" y="46">2015</text>
+  <text class="t" x="26" y="70">FlowNet</text>
+  <text class="s" x="26" y="96">Encoder-decoder network.</text>
+  <text class="s" x="26" y="114">One correlation layer.</text>
+  <text class="s" x="26" y="132">Trained on synthetic</text>
+  <text class="s" x="26" y="150">FlyingChairs images.</text>
+  <rect class="box" x="235" y="20" width="195" height="150" rx="14"/>
+  <text class="y" x="251" y="46">2018</text>
+  <text class="t" x="251" y="70">PWC-Net</text>
+  <text class="s" x="251" y="96">Pyramid of features.</text>
+  <text class="s" x="251" y="114">Warp by the coarse flow,</text>
+  <text class="s" x="251" y="132">small local cost volume,</text>
+  <text class="s" x="251" y="150">refine level by level.</text>
+  <rect class="box" x="455" y="20" width="195" height="150" rx="14"/>
+  <text class="y" x="471" y="46">2020</text>
+  <text class="t" x="471" y="70">RAFT</text>
+  <text class="s" x="471" y="96">Correlation of all pairs</text>
+  <text class="s" x="471" y="114">of pixels, computed once.</text>
+  <text class="s" x="471" y="132">A recurrent unit refines</text>
+  <text class="s" x="471" y="150">the flow many times.</text>
+  <rect class="box box--ours" x="675" y="20" width="215" height="150" rx="14"/>
+  <text class="y" x="691" y="46">2026 · PRAISe Lab</text>
+  <text class="t" x="691" y="70">TinyFlow</text>
+  <text class="s" x="691" y="96">Iterative refinement</text>
+  <text class="s" x="691" y="114">with no warping: a fixed</text>
+  <text class="s" x="691" y="132">window, 1.26M parameters,</text>
+  <text class="s" x="691" y="150">INT8 on an edge chip.</text>
+  <text class="s" x="10" y="210">Each box reuses a classical idea: correlation (block matching), pyramids and warping (coarse to fine), and iterative updates (Gauss-Newton).</text>
+</svg>
+```
+
+- **FlowNet** (Dosovitskiy and colleagues, 2015) was the first network to estimate flow end to end. Real images with exact flow are scarce, so it was trained on **FlyingChairs**, synthetic images of chairs pasted over photographs and moved randomly. The surprise was that training on such unrealistic data transferred to real video. FlowNet 2.0 (2017) stacked several such networks to reach the accuracy of classical methods.
+- **PWC-Net** (Sun and colleagues, 2018) brought the classical coarse-to-fine scheme into the network. At each pyramid level it **warps** the second frame's features by the current flow, builds a small cost volume around zero, and estimates a correction. Warping keeps the search window small, exactly as in pyramidal Lucas-Kanade.
+- **RAFT** (Teed and Deng, 2020) computes the correlation between **all pairs** of pixels once, then refines the flow with a recurrent unit over many iterations. At each step it looks up the correlations around the current estimate. RAFT set a new standard for accuracy and robustness, and most recent methods build on its design, adding transformers, better training data or faster lookups.
+
+Learned methods are usually trained on synthetic data and evaluated on benchmarks such as **MPI-Sintel**, rendered from an open animated film, and **KITTI**, real driving scenes with lidar-based ground truth. Their main costs are compute and memory, which matter a great deal on small robots.
+
+### Flow on the edge: TinyFlow
+
+A palm-sized drone cannot carry a desktop GPU. It can carry an **edge AI accelerator**, a chip that draws about a watt. These chips run fixed computation graphs with 8-bit integer (INT8) arithmetic. The most accurate flow networks do not fit this model, because **warping** reads memory at addresses that depend on the flow computed at run time.
+
+**TinyFlow** (Song and Singh, IROS 2026 Workshop on Insect-scale Autonomy, Best Poster Award), from the author's lab, keeps iterative refinement but removes the warp. It correlates the two frames once, over a fixed window of offsets known in advance, and reuses that cost volume in every refinement step. For an integer flow, the warped cost volume is just a shifted read of the fixed one, so warping adds no new evidence; it only recenters the search window. TinyFlow keeps the window centered and makes it wide enough instead, and passes the current flow to the update step as an ordinary input. The whole network then compiles into one static INT8 graph.
+
+```{=html}
+<figure class="of-figure">
+  <img src="media/optical-flow/tinyflow_warp_vs_warpfree.jpg" alt="Left: warp-based refinement, which re-matches warped features on every iteration. Right: TinyFlow, which matches the two frames once and reuses the fixed result on every iteration." loading="lazy">
+  <figcaption>Warp-based refinement (left) re-matches warped features in every iteration, which needs data-dependent memory access. TinyFlow (right) matches once and reuses the fixed result. Figure: PRAISe Lab.</figcaption>
+</figure>
+```
+
+With 1.26 million parameters, TinyFlow is more accurate than the earlier edge networks EdgeFlowNet and NanoFlowNet on Sintel and FlyingChairs, in both 32-bit floating point and INT8, while using 54% fewer parameters than EdgeFlowNet. Quantization-aware fine-tuning keeps the INT8 penalty below 0.2 pixels of end-point error. On a Raspberry Pi 5 with a Hailo-8 accelerator, it runs at about 10 frames per second. Used in INT8 as the only input to visual odometry on a drone-racing dataset, it gives a trajectory error of 2.04 m, against 2.41 m for EdgeFlowNet.
+
+```{=html}
+<figure class="of-figure">
+  <img src="media/optical-flow/tinyflow_results_plots.jpg" alt="Left: parameters against Sintel Clean end-point error for Float32 and INT8 models. Right: flow-only visual odometry trajectories on a drone-racing dataset." loading="lazy">
+  <figcaption>Left: model size against Sintel Clean end-point error (lower is better). Right: flow-only visual odometry on the UZH-FPV drone-racing dataset. Figure: PRAISe Lab.</figcaption>
+</figure>
+```
+
+The design reflects a theme of this book: on small robots, the best algorithm is the one that fits the hardware, and classical insight (here, that warping only recenters a search window) is what makes the fit possible.
+
+::: {.callout-tip}
+## Exercises
+1. A drone flies at 2 m/s, 1 m above a textured floor, with a downward camera with focal length 300 pixels at 100 frames per second. How many pixels per frame does the floor move? What happens to this number if the drone climbs to 4 m, and why does a flow sensor need a rangefinder?
+2. In the motion field figure, choose **Turn (yaw)** and then **Translation only**. Explain what you see. Why can't a purely rotating camera estimate depth?
+3. A car approaches a wall at constant speed. Its camera sees the wall's image grow from 100 to 104 pixels wide between two frames 1/30 s apart. Estimate the time to contact.
+4. In the cost volume figure, the near drone moves about 12 pixels. What is the smallest search radius that finds it at full resolution, at 1/2 and at 1/4? Count the correlations each one needs.
+:::
+
+## Summary
+
+- The **motion field** is the projection of 3D motion onto the image. **Optical flow** is the apparent motion of brightness patterns. They agree for textured, matte, steadily lit surfaces, and disagree for uniform surfaces, moving lights and reflections.
+- Brightness constancy and small motion give the **optical flow constraint** $I_x u + I_y v + I_t = 0$: one equation, two unknowns. Locally, only the flow normal to an edge can be measured; this is the **aperture problem**.
+- **Lucas-Kanade** assumes constant flow in a window and solves a 2 × 2 system with the **structure tensor**. Its eigenvalues reveal flat regions, edges and corners, so good corners are good points to track.
+- **Horn-Schunck** adds a global smoothness term, giving a dense flow field that fills textureless regions but blurs motion boundaries.
+- Both rely on small motion; **coarse-to-fine pyramids** with warping extend them to large displacements.
+- Flow is shown with a **color wheel**: hue for direction, saturation for speed. Accuracy is measured by the **end-point error**.
+- For a moving camera, the rotational flow is independent of depth, while the translational flow scales with $1/Z$. Pure translation radiates from the **focus of expansion**, and **time to contact** $\tau = Z/T_z$ can be read from the image alone.
+- Learned methods (FlowNet, PWC-Net, RAFT) build cost volumes from learned features and refine flow iteratively. **TinyFlow** removes warping so that iterative flow runs in INT8 on edge accelerators aboard tiny robots.
+
+```{=html}
+<script src="../demos/opencv-loader.js"></script>
+<script src="../demos/optical-flow.js"></script>
+```

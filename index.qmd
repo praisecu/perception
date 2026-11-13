@@ -49,6 +49,8 @@ This book is written for students meeting computer vision and robot perception f
 [[Chapter 13]{.book-card__label}[Neural Radiance Fields]{.book-card__title}[Positional encoding, hierarchical sampling and hash grids.]{.book-card__text}](chapters/nerf.qmd){.book-card}
 
 [[Chapter 14]{.book-card__label}[3D Gaussian Splatting]{.book-card__title}[Covariance, EWA projection, sorting and adaptive density control.]{.book-card__text}](chapters/gaussian-splatting.qmd){.book-card}
+
+[[Chapter 15]{.book-card__label}[Motion Fields and Optical Flow]{.book-card__title}[Brightness constancy, Lucas-Kanade, Horn-Schunck and learned flow.]{.book-card__text}](chapters/optical-flow.qmd){.book-card}
 :::
 
 ::: {.callout-note}
