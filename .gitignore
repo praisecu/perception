@@ -9,3 +9,4 @@ tools/shorts/out/**/*.mp4
 tools/shorts/out/**/*.wav
 tools/shorts/out/**/*.m4a
 tools/shorts/assets/*_r*w*.png
+tools/shorts/out/**/*.mp3
