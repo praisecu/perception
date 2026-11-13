@@ -26,7 +26,7 @@ The 2D pattern of apparent motion in an image is called **optical flow**. It is 
 ```
 
 ::: {.callout-note appearance="simple"}
-**In this chapter.** Motion field versus optical flow · the aperture problem · brightness constancy and the optical flow constraint · Lucas-Kanade and the structure tensor · coarse-to-fine pyramids · Horn-Schunck · measuring and showing flow · the motion field of a moving camera · focus of expansion and time to contact · scene flow · flow in robots and in nature · learned optical flow · flow on tiny robots.
+**In this chapter.** Motion field versus optical flow · the aperture problem · brightness constancy and the optical flow constraint · Lucas-Kanade and the structure tensor · coarse-to-fine pyramids · Horn-Schunck · measuring and showing flow · the motion field of a moving camera · focus of expansion and time to contact · scene flow · flow in robots and in nature · learned optical flow.
 :::
 
 ## Motion field and optical flow
@@ -662,30 +662,6 @@ The search radius is a hard limit: a match outside the window cannot be found, a
 
 Learned methods are usually trained on synthetic data and evaluated on benchmarks such as **MPI-Sintel**, rendered from an open animated film, and **KITTI**, real driving scenes with lidar-based ground truth. Their main costs are compute and memory, which matter a great deal on small robots.
 
-### Flow on the edge: TinyFlow
-
-A palm-sized drone cannot carry a desktop GPU. It can carry an **edge AI accelerator**, a chip that draws about a watt. These chips run fixed computation graphs with 8-bit integer (INT8) arithmetic. The most accurate flow networks do not fit this model, because **warping** reads memory at addresses that depend on the flow computed at run time.
-
-**TinyFlow** (Song and Singh, IROS 2026 Workshop on Insect-scale Autonomy, Best Poster Award), from the author's lab, keeps iterative refinement but removes the warp. It correlates the two frames once, over a fixed window of offsets known in advance, and reuses that cost volume in every refinement step. For an integer flow, the warped cost volume is just a shifted read of the fixed one, so warping adds no new evidence; it only recenters the search window. TinyFlow keeps the window centered and makes it wide enough instead, and passes the current flow to the update step as an ordinary input. The whole network then compiles into one static INT8 graph.
-
-```{=html}
-<figure class="of-figure">
-  <img src="media/optical-flow/tinyflow_warp_vs_warpfree.jpg" alt="Left: warp-based refinement, which re-matches warped features on every iteration. Right: TinyFlow, which matches the two frames once and reuses the fixed result on every iteration." loading="lazy">
-  <figcaption>Warp-based refinement (left) re-matches warped features in every iteration, which needs data-dependent memory access. TinyFlow (right) matches once and reuses the fixed result. Figure: PRAISe Lab.</figcaption>
-</figure>
-```
-
-With 1.26 million parameters, TinyFlow is more accurate than the earlier edge networks EdgeFlowNet and NanoFlowNet on Sintel and FlyingChairs, in both 32-bit floating point and INT8, while using 54% fewer parameters than EdgeFlowNet. Quantization-aware fine-tuning keeps the INT8 penalty below 0.2 pixels of end-point error. On a Raspberry Pi 5 with a Hailo-8 accelerator, it runs at about 10 frames per second. Used in INT8 as the only input to visual odometry on a drone-racing dataset, it gives a trajectory error of 2.04 m, against 2.41 m for EdgeFlowNet.
-
-```{=html}
-<figure class="of-figure">
-  <img src="media/optical-flow/tinyflow_results_plots.jpg" alt="Left: parameters against Sintel Clean end-point error for Float32 and INT8 models. Right: flow-only visual odometry trajectories on a drone-racing dataset." loading="lazy">
-  <figcaption>Left: model size against Sintel Clean end-point error (lower is better). Right: flow-only visual odometry on the UZH-FPV drone-racing dataset. Figure: PRAISe Lab.</figcaption>
-</figure>
-```
-
-The design reflects a theme of this book: on small robots, the best algorithm is the one that fits the hardware, and classical insight (here, that warping only recenters a search window) is what makes the fit possible.
-
 ::: {.callout-tip}
 ## Exercises
 1. A drone flies at 2 m/s, 1 m above a textured floor, with a downward camera with focal length 300 pixels at 100 frames per second. How many pixels per frame does the floor move? What happens to this number if the drone climbs to 4 m, and why does a flow sensor need a rangefinder?
@@ -703,7 +679,7 @@ The design reflects a theme of this book: on small robots, the best algorithm is
 - Both rely on small motion; **coarse-to-fine pyramids** with warping extend them to large displacements.
 - Flow is shown with a **color wheel**: hue for direction, saturation for speed. Accuracy is measured by the **end-point error**.
 - For a moving camera, the rotational flow is independent of depth, while the translational flow scales with $1/Z$. Pure translation radiates from the **focus of expansion**, and **time to contact** $\tau = Z/T_z$ can be read from the image alone.
-- Learned methods (FlowNet, PWC-Net, RAFT) build cost volumes from learned features and refine flow iteratively. **TinyFlow** removes warping so that iterative flow runs in INT8 on edge accelerators aboard tiny robots.
+- Learned methods (FlowNet, PWC-Net, RAFT) build cost volumes from learned features and refine flow iteratively.
 
 ```{=html}
 <script src="../demos/opencv-loader.js"></script>
