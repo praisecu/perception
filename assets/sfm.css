@@ -1,0 +1,146 @@
+/* Chapter 11: Structure from Motion */
+
+.sfm-big,
+.sfm-wide,
+.sfm-3d,
+.sfm-plot,
+.sfm-grid,
+.sfm-vis,
+.sfm-flat,
+.sfm-chart {
+  display: block;
+  width: 100%;
+  height: auto;
+  border-radius: 12px;
+}
+
+.sfm-big,
+.sfm-wide {
+  background: #111;
+  cursor: crosshair;
+}
+
+.sfm-3d {
+  touch-action: none;
+  cursor: grab;
+  background: rgba(207, 185, 125, 0.06);
+}
+
+.sfm-flat {
+  touch-action: none;
+  cursor: move;
+  background: rgba(207, 185, 125, 0.06);
+}
+
+.sfm-plot,
+.sfm-grid,
+.sfm-vis,
+.sfm-chart {
+  margin-top: 0.6rem;
+  border: 1px solid rgba(207, 185, 125, 0.25);
+}
+
+.sfm-strip {
+  display: grid;
+  grid-template-columns: repeat(8, 1fr);
+  gap: 0.35rem;
+  margin-top: 0.5rem;
+}
+
+.sfm-strip canvas {
+  width: 100%;
+  height: auto;
+  border-radius: 6px;
+  cursor: pointer;
+  outline: 2px solid transparent;
+  outline-offset: 1px;
+}
+
+.sfm-strip canvas.is-on {
+  outline-color: #cfb97d;
+}
+
+.sfm-caption {
+  margin: 0.4rem 0 0;
+  font-size: 0.85rem;
+  opacity: 0.7;
+}
+
+.sfm-files {
+  margin: 0.6rem 0 0;
+  padding: 0.7rem 0.9rem;
+  max-height: 320px;
+  overflow: auto;
+  border-radius: 10px;
+  background: rgba(207, 185, 125, 0.08);
+  font-size: 0.78rem;
+  line-height: 1.5;
+  white-space: pre;
+}
+
+/* The SfM pipeline as a row of steps */
+.sfm-pipeline {
+  display: flex;
+  flex-wrap: wrap;
+  align-items: stretch;
+  gap: 0.4rem;
+  margin: 1.2rem 0 1.4rem;
+  padding: 0;
+  list-style: none;
+  counter-reset: step;
+}
+
+.sfm-pipeline li {
+  position: relative;
+  flex: 1 1 130px;
+  padding: 0.7rem 0.8rem 0.7rem 2.6rem;
+  border: 1px solid rgba(207, 185, 125, 0.45);
+  border-radius: 12px;
+  background: rgba(207, 185, 125, 0.07);
+  font-size: 0.9rem;
+  line-height: 1.35;
+  counter-increment: step;
+}
+
+.sfm-pipeline li::before {
+  content: counter(step);
+  position: absolute;
+  left: 0.7rem;
+  top: 0.7rem;
+  width: 1.45rem;
+  height: 1.45rem;
+  border-radius: 50%;
+  background: #cfb97d;
+  color: #1b1b1b;
+  font-weight: 700;
+  font-size: 0.8rem;
+  text-align: center;
+  line-height: 1.45rem;
+}
+
+.sfm-pipeline a {
+  font-weight: 700;
+  text-decoration: none;
+}
+
+.sfm-pipeline small {
+  display: block;
+  opacity: 0.7;
+}
+
+.sfm-pipeline li.is-loop {
+  border-style: dashed;
+}
+
+/* Scale-ambiguity drawing */
+.sfm-cam { fill: currentColor; fill-opacity: 0.8; }
+.sfm-base { stroke: currentColor; stroke-width: 2; stroke-opacity: 0.6; stroke-dasharray: 6 5; }
+.sfm-label { fill: currentColor; font-family: "Nunito Sans", sans-serif; font-size: 14px; font-weight: 700; text-anchor: middle; }
+.sfm-label--left { text-anchor: start; }
+.sfm-small { fill: currentColor; opacity: 0.65; font-size: 12px; }
+
+@media (max-width: 600px) {
+  .sfm-strip {
+    grid-template-columns: repeat(4, 1fr);
+  }
+}

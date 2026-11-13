@@ -1,0 +1,457 @@
+---
+# Editable code runs in the reader's browser (Pyodide), not at build time.
+engine: markdown
+pyodide:
+  packages:
+    - numpy
+    - matplotlib
+---
+
+# Neural Radiance Fields {#sec-nerf}
+
+```{=html}
+<link rel="stylesheet" href="../assets/nerf.css">
+```
+
+Take a few dozen photos of an object while walking around it. Could a computer now show you the object from a viewpoint where you never stood? This is the problem of **novel view synthesis**, and for decades it needed either a carefully built 3D model or very dense image collections. In 2020, **Neural Radiance Fields** (NeRF) changed the picture. A NeRF stores a scene inside a small neural network, renders it with the volume rendering equations of @sec-volumetric, and learns the network from nothing more than photos and their camera poses. The renders were sharp enough, and the idea simple enough, that thousands of follow-up papers appeared within a few years.
+
+This chapter builds a NeRF piece by piece. You will train small networks in your browser, watch positional encoding unlock fine detail, fit a radiance field to a handful of 1D cameras, and explore the ideas behind the fast and anti-aliased NeRFs that followed.
+
+::: {.callout-note appearance="simple"}
+**In this chapter.** The view synthesis problem · explicit and implicit 3D representations · the radiance field and its network · differentiable volume rendering · training from posed images · positional encoding and spectral bias · view-dependent appearance · hierarchical sampling · limitations · mip-NeRF, mip-NeRF 360, Instant-NGP, Zip-NeRF, dynamic and few-view NeRFs.
+:::
+
+## The view synthesis problem
+
+The input to a NeRF is a set of images of one static scene, each with its **camera pose** (rotation and position) and intrinsics. The output is a model that can render the scene from any new camera. The poses usually come from structure from motion, the topic of the previous part of the book: a tool such as COLMAP matches features across the photos and solves for every camera at once.
+
+The figure below shows a capture of this kind. Blender rendered 36 views of a drone on a ring around it, and because the images are synthetic, every pose is known exactly. Drag the image to walk around the drone, or click a camera in the top view. Then thin out the training set: a NeRF must fill in everything between the cameras it is given.
+
+```{=html}
+<div class="sim" id="capture-sim">
+  <div class="nf-pair">
+    <figure><svg class="sim__svg" viewBox="0 0 360 360" role="img" aria-label="Top view of a ring of cameras around a drone"></svg><figcaption>Camera poses, seen from above</figcaption></figure>
+    <figure><canvas class="nf-drag" aria-label="The image seen by the selected camera"></canvas><figcaption>The image from the selected camera: drag to orbit</figcaption></figure>
+  </div>
+  <div class="sim__controls">
+    <label>Camera <input type="range" name="view" min="0" max="35" step="1" value="0"><output></output></label>
+    <span class="sim__group">Training views
+      <button type="button" class="btn btn-gold-outline btn-sm is-on" data-every="1">36</button>
+      <button type="button" class="btn btn-gold-outline btn-sm" data-every="3">12</button>
+      <button type="button" class="btn btn-gold-outline btn-sm" data-every="9">4</button>
+    </span>
+  </div>
+  <p class="sim__readout"></p>
+</div>
+```
+
+## Representing a 3D scene
+
+Before NeRF, there were two broad ways to represent a scene for rendering and reconstruction.
+
+**Explicit representations** store the geometry directly: point clouds, meshes, or voxel grids. Voxel grids holding color and opacity (RGB-alpha volumes) render well with the compositing of @sec-volumetric and are easy to optimize, because every voxel is an independent parameter. Their weakness is memory. Storage grows with the cube of the resolution, so a detailed scene can take gigabytes.
+
+**Implicit representations** store a *function* instead. An occupancy network, for example, is a classifier that takes a 3D point and says whether it is inside or outside the object; the surface is its decision boundary. A signed distance network returns the distance to the nearest surface. Because a network is a continuous function, it has no fixed resolution and can describe any topology, and it is compact: a few megabytes of weights. Early implicit models, however, were hard to optimize from images and had limited rendering models.
+
+| | Explicit (voxels, meshes, points) | Implicit (networks) |
+|---|---|---|
+| Storage | large, grows with resolution | small, a few MB |
+| Rendering | fast, well understood | needs many network queries |
+| Optimization from images | easy | historically hard |
+| Resolution | fixed by the grid | continuous |
+
+NeRF sits where the two lines of work meet. It is an implicit model, a plain multilayer perceptron with no convolutions at all, but it uses the volumetric rendering model that made voxel methods easy to optimize.
+
+## A radiance field in a network
+
+A NeRF represents the scene as a function
+
+$$
+F_\Theta : (\mathbf{x}, \mathbf{d}) \;\mapsto\; (\mathbf{c}, \sigma),
+$$
+
+where $\mathbf{x} = (x, y, z)$ is a 3D position, $\mathbf{d}$ is a viewing direction (two angles, or a unit vector), $\mathbf{c}$ is the RGB color emitted toward that direction, and $\sigma$ is the volume density at $\mathbf{x}$. The function is a **radiance field**: it says how much light of each color leaves every point in every direction. $\Theta$ is the set of network weights.
+
+Two design choices matter. First, the density depends only on position, so the geometry is the same from every viewpoint. Second, the direction enters late in the network, so it can tint the color (for reflections and highlights) but cannot change the shape. In the original NeRF, eight fully connected layers of 256 units process the encoded position and output $\sigma$ plus a feature vector; one more layer combines that feature with the encoded direction and outputs the color.
+
+```{=html}
+<svg class="nf-pipe" viewBox="0 0 760 190" role="img" aria-label="NeRF pipeline: a camera ray is sampled, each sample is encoded and passed through an MLP, and the outputs are volume rendered into a pixel compared with the photo">
+  <defs><marker id="nf-arrow" viewBox="0 0 10 10" refX="9" refY="5" markerWidth="7" markerHeight="7" orient="auto-start-reverse"><path d="M0,0 L10,5 L0,10 z" fill="currentColor" fill-opacity="0.6"/></marker></defs>
+  <rect class="box" x="8" y="55" width="120" height="70" rx="10"/>
+  <text x="68" y="85">Sample points</text><text x="68" y="104" class="small">along each ray</text>
+  <rect class="box" x="160" y="55" width="110" height="70" rx="10"/>
+  <text x="215" y="85">Encode</text><text x="215" y="104" class="small">γ(x), γ(d)</text>
+  <rect class="mlp" x="302" y="40" width="130" height="100" rx="10"/>
+  <text x="367" y="80">MLP F<tspan baseline-shift="sub" font-size="10">Θ</tspan></text><text x="367" y="100" class="small">8 × 256, then 1 × 128</text>
+  <rect class="box" x="464" y="55" width="110" height="70" rx="10"/>
+  <text x="519" y="85">Volume render</text><text x="519" y="104" class="small">Σ Tᵢ αᵢ cᵢ</text>
+  <rect class="box" x="606" y="55" width="146" height="70" rx="10"/>
+  <text x="679" y="85">Pixel color Ĉ(r)</text><text x="679" y="104" class="small">compare with photo C(r)</text>
+  <path class="arrow" d="M128,90 H158"/><path class="arrow" d="M270,90 H300"/><path class="arrow" d="M432,90 H462"/><path class="arrow" d="M574,90 H604"/>
+  <text x="367" y="160" class="small">(x, y, z, θ, φ) → (r, g, b, σ) for every sample</text>
+  <path class="arrow" d="M679,128 C679,182 215,182 215,128"/>
+  <text x="447" y="178" class="small">gradient of ‖Ĉ − C‖² flows back to the weights</text>
+</svg>
+```
+
+## Rendering and training
+
+To render a pixel, NeRF casts the ray $\mathbf{r}(t) = \mathbf{o} + t\,\mathbf{d}$ through it, queries the network at sample points $t_1 < t_2 < \dots < t_N$, and composites the results exactly as in @sec-volumetric:
+
+$$
+\hat{C}(\mathbf{r}) = \sum_{i=1}^{N} T_i \,\bigl(1 - e^{-\sigma_i \delta_i}\bigr)\, \mathbf{c}_i,
+\qquad
+T_i = \exp\Bigl(-\sum_{j<i} \sigma_j \delta_j\Bigr),
+$$
+
+where $\delta_i = t_{i+1} - t_i$ is the spacing between samples. Each term is a weight $w_i = T_i\,(1 - e^{-\sigma_i \delta_i})$ times a color: the chance that the ray reaches sample $i$ and stops there.
+
+The key observation is that this sum is **differentiable** in every $\sigma_i$ and $\mathbf{c}_i$, and therefore in the network weights. So training is plain gradient descent on a photometric loss. Each iteration picks a random batch of pixels (rays) from the training images, renders them, and minimizes
+
+$$
+\mathcal{L} = \sum_{\mathbf{r} \in \text{batch}} \bigl\lVert \hat{C}(\mathbf{r}) - C(\mathbf{r}) \bigr\rVert_2^2 .
+$$
+
+No 3D supervision is used: no depth, no masks, no meshes. The geometry emerges because a single density field has to explain every photo at once. A surface in the wrong place would look right from one camera but wrong from the others.
+
+The figure below runs this whole loop in a flat, two-dimensional world. The scene (left) contains three colored shapes. Each camera sees a one-pixel-tall image of 48 pixels. The learned field (right) starts as faint gray fog. Press **Train**: every step renders all training rays, compares them with the true images, and updates the field by gradient descent through the compositing sum. The gold dashed camera is **held out**: it is never used for training, so its accuracy measures true novel view synthesis.
+
+```{=html}
+<div class="sim" id="flat-sim">
+  <div class="nf-pair">
+    <figure><canvas aria-label="The true flatland scene with cameras"></canvas><figcaption>True scene and cameras (gold: held-out view)</figcaption></figure>
+    <figure><canvas aria-label="The learned density and color field"></canvas><figcaption>Learned radiance field</figcaption></figure>
+  </div>
+  <canvas class="nf-chart" width="720" height="140" aria-label="Rows of 1D images: truth and rendered for a training view and the held-out view"></canvas>
+  <div class="sim__controls">
+    <label>Training views <input type="range" name="K" min="1" max="24" step="1" value="8"><output></output></label>
+    <button type="button" class="btn btn-gold-outline btn-sm" data-action="train">Train</button>
+    <button type="button" class="btn btn-gold-outline btn-sm" data-action="reset">Reset</button>
+  </div>
+  <p class="sim__readout"></p>
+</div>
+```
+
+Try one or two training views. The training error still falls to almost nothing, but the held-out view is poor: the shapes smear out along the training rays, because with so few views many different fields explain the images equally well. NeRF is not magic. Like structure from motion, it needs **many views**, and it is fit to one particular scene; a new scene means training from scratch.
+
+To keep the demo fast, the field here is stored on a 40 × 40 grid of values rather than in a network. That choice is not just a shortcut: grid-based radiance fields such as Plenoxels and Instant-NGP (below) train orders of magnitude faster than the original NeRF for exactly this reason.
+
+## Positional encoding
+
+If you feed raw coordinates $(x, y, z)$ into an MLP and train it on photos, the result is disappointingly blurry. Networks with ReLU activations have a **spectral bias**: they learn low-frequency (smooth) functions quickly and high-frequency detail very slowly, if at all. NeRF's fix is to map each input coordinate $p$ to a set of sinusoids of exponentially increasing frequency before it enters the network:
+
+$$
+\gamma(p) = \bigl(p,\; \sin(2^0 \pi p), \cos(2^0 \pi p),\; \dots,\; \sin(2^{L-1} \pi p), \cos(2^{L-1} \pi p)\bigr).
+$$
+
+The encoding is fixed, not learned, and costs almost nothing. NeRF uses $L = 10$ for position (63 numbers per point, including the raw coordinates) and $L = 4$ for direction. With these features available, the network can build fine detail out of combinations of high-frequency inputs instead of having to create the frequencies itself.
+
+The figure below trains a small MLP (two hidden layers of 64 units) to fit 128 samples of a 1D signal. Train it with the encoding switched off, then with a few frequencies, then with many.
+
+```{=html}
+<div class="sim" id="pe-sim">
+  <canvas class="nf-chart" width="720" height="260" aria-label="Training samples, true signal and network output"></canvas>
+  <div class="sim__controls">
+    <label>Frequencies L <input type="range" name="L" min="0" max="10" step="1" value="0"><output></output></label>
+    <span class="sim__group">Signal
+      <button type="button" class="btn btn-gold-outline btn-sm is-on" data-target="waves">Waves</button>
+      <button type="button" class="btn btn-gold-outline btn-sm" data-target="steps">Steps</button>
+      <button type="button" class="btn btn-gold-outline btn-sm" data-target="chirp">Chirp</button>
+    </span>
+    <button type="button" class="btn btn-gold-outline btn-sm" data-action="train">Train</button>
+    <button type="button" class="btn btn-gold-outline btn-sm" data-action="reset">Reset</button>
+  </div>
+  <p class="sim__readout"></p>
+</div>
+```
+
+Without the encoding, the network captures the slow wave and ignores the rest. With $L$ around 5 or 6, it fits the detail. With $L = 10$, the highest frequency oscillates hundreds of times across the plot, faster than the samples can pin down, and the curve becomes noisy *between* the samples even though it passes through them. The number of frequencies is a knob that trades detail against overfitting.
+
+The same effect in 2D is striking. Below, two identical networks learn to map a pixel coordinate $(u, v)$ to its color in a crop of one of the drone views. The only difference is the input encoding.
+
+```{=html}
+<div class="sim" id="pe2d-sim">
+  <div class="nf-trio">
+    <figure><canvas class="nf-pixels" aria-label="Target image"></canvas><figcaption>Target (64 × 48 pixels)</figcaption></figure>
+    <figure><canvas class="nf-pixels" aria-label="Network without encoding"></canvas><figcaption>Raw (u, v) input</figcaption></figure>
+    <figure><canvas class="nf-pixels" aria-label="Network with positional encoding"></canvas><figcaption>With positional encoding</figcaption></figure>
+  </div>
+  <div class="sim__controls">
+    <label>Frequencies L <input type="range" name="L" min="1" max="8" step="1" value="6"><output></output></label>
+    <button type="button" class="btn btn-gold-outline btn-sm" data-action="train">Train</button>
+    <button type="button" class="btn btn-gold-outline btn-sm" data-action="reset">Reset</button>
+  </div>
+  <p class="sim__readout"></p>
+</div>
+```
+
+### Try it in code: what the encoding buys
+
+The cell below makes the point without any neural network at all. It fits a signal with a *linear* model on the encoded inputs $\gamma(x)$, using least squares. With $L = 0$ the model is a straight line; each added level gives it one more octave of frequencies to work with.
+
+```{pyodide}
+import numpy as np
+import matplotlib.pyplot as plt
+
+def positional_encoding(x, L):
+    """gamma(x) = [x, sin(2^k pi x), cos(2^k pi x)] for k = 0 .. L-1."""
+    x = np.atleast_1d(x)[:, None]
+    freqs = np.pi * 2.0 ** np.arange(L)
+    return np.concatenate([x, np.sin(freqs * x), np.cos(freqs * x)], axis=1)
+
+# Fit samples of a detailed 1D signal with a *linear* model on the encoding.
+# More frequency levels let even a linear model represent finer detail.
+rng = np.random.default_rng(0)
+f = lambda x: 0.5 * np.sin(np.pi * x) + 0.3 * np.cos(8 * np.pi * x) + 0.15 * np.sin(32 * np.pi * x + 1)
+x_train = np.sort(rng.uniform(-1, 1, 160))
+y_train = f(x_train)
+x_test = np.linspace(-1, 1, 800)
+
+fig, ax = plt.subplots(1, 4, figsize=(15, 3), sharey=True)
+for a, L in zip(ax, [0, 3, 4, 6]):           # try other values, such as 9 or 12
+    A = positional_encoding(x_train, L)
+    A = np.hstack([A, np.ones((len(A), 1))])   # bias term
+    w, *_ = np.linalg.lstsq(A, y_train, rcond=None)
+    B = np.hstack([positional_encoding(x_test, L), np.ones((len(x_test), 1))])
+    pred = B @ w
+    err = np.mean((pred - f(x_test)) ** 2)
+    a.plot(x_test, f(x_test), color="0.7", lw=1)
+    a.plot(x_test, pred, color="#cfb97d", lw=2)
+    a.scatter(x_train, y_train, s=6, color="#3b82c4")
+    a.set_title(f"L = {L}: {A.shape[1]} features, error {err:.3f}")
+plt.show()
+```
+
+::: {.callout-tip}
+## Exercise
+In the cell above, reduce the number of training samples from 160 to 30 and try $L = 6$ and $L = 9$. What happens between the samples, and why? Relate your answer to the sampling theorem and to the noisy curve in the 1D figure.
+:::
+
+## View-dependent appearance
+
+Most real surfaces are not Lambertian. A glossy drone shell, a car body or a wet road shows highlights that move as you move, because the reflected light depends on both the incoming and the outgoing direction. Recall from @sec-curves-rendering the Phong model, which adds a specular lobe around the mirror direction to a diffuse term; more realistic **microfacet** models and, in general, the **bidirectional reflectance distribution function** (BRDF) describe how much light arriving from one direction leaves in another.
+
+A NeRF does not model the BRDF or the lights explicitly. It simply lets the emitted color depend on the viewing direction $\mathbf{d}$. Compare the two spheres below. The left one is rendered with the true view-dependent shading. The right one shows what the best model *without* a direction input can learn from a ring of 36 training views: at each point, the average over all the views. Drag either sphere to change the viewpoint and watch the circled point.
+
+```{=html}
+<div class="sim" id="vd-sim">
+  <div class="nf-pair nf-spheres">
+    <figure><canvas class="nf-drag" aria-label="Sphere with view-dependent highlight"></canvas><figcaption>Color depends on position and direction</figcaption></figure>
+    <figure><canvas class="nf-drag" aria-label="Sphere with averaged highlight"></canvas><figcaption>Color depends on position only</figcaption></figure>
+  </div>
+  <canvas class="nf-chart" width="720" height="200" aria-label="Brightness of the circled point versus viewing direction"></canvas>
+  <div class="sim__controls">
+    <label>Viewing direction <input type="range" name="az" min="-180" max="180" step="1" value="0"><output></output></label>
+    <label>Shininess <input type="range" name="shine" min="4" max="200" step="1" value="40"><output></output></label>
+  </div>
+  <p class="sim__readout"></p>
+</div>
+```
+
+The position-only model bakes a dull, smeared highlight into the surface and gets the brightness wrong from almost every view. In a real NeRF without direction input, the optimizer often does something worse: it invents semi-transparent "floaters" in front of shiny surfaces to fake the changing appearance. Feeding the direction late in the network lets highlights move while the geometry stays put.
+
+## Hierarchical sampling
+
+A radiance field is defined at every point in space, but only a few regions matter for a given ray: the first surfaces it meets. Free space contributes nothing, and space behind a surface is hidden. Sampling the ray evenly wastes most network queries.
+
+NeRF therefore renders in two passes with two networks:
+
+1. **Coarse pass.** Query a *coarse* network at $N_c$ stratified samples: split the ray into $N_c$ equal bins and pick one random point in each. Compute the weights $w_i$.
+2. **Fine pass.** Normalize the weights into a probability distribution along the ray, $\hat{w}_i = w_i / \sum_j w_j$, and draw $N_f$ more samples from it by **inverse transform sampling**. Query a *fine* network at all $N_c + N_f$ points and render the final color.
+
+Both networks are trained with the photometric loss. The original paper used $N_c = 64$ and $N_f = 128$. In the figure below, move the surface and change the budgets, then compare with spreading the same number of samples evenly. Then try a very small coarse budget, such as $N_c = 6$, with the surface far away: if no coarse sample lands in the surface, the fine pass has nothing to aim at and misses it too. In a trained NeRF this is less severe than here, because learned densities are smooth rather than hard-edged.
+
+```{=html}
+<div class="sim" id="sampling-sim">
+  <canvas class="nf-chart" width="720" height="300" aria-label="Density along a ray with coarse samples, their weights, and fine samples"></canvas>
+  <div class="sim__controls">
+    <label>Coarse N<sub>c</sub> <input type="range" name="Nc" min="4" max="64" step="1" value="32"><output></output></label>
+    <label>Fine N<sub>f</sub> <input type="range" name="Nf" min="0" max="128" step="1" value="64"><output></output></label>
+    <label>Surface at <input type="range" name="surf" min="0.4" max="0.9" step="0.01" value="0.62"><output></output></label>
+    <button type="button" class="btn btn-gold-outline btn-sm is-on" data-action="fine">Show fine samples</button>
+    <button type="button" class="btn btn-gold-outline btn-sm" data-action="again">Sample again</button>
+  </div>
+  <p class="sim__readout"></p>
+</div>
+```
+
+### Try it in code: coarse-to-fine sampling
+
+The cell below implements the two steps for one ray: stratified coarse samples, their rendering weights, and inverse transform sampling of the fine samples. Following mip-NeRF, each coarse weight is first widened to its neighbors, so that the bin just in front of a surface also receives fine samples. The cell then compares the rendered depth with a dense reference, averaged over many random draws.
+
+```{pyodide}
+import numpy as np
+import matplotlib.pyplot as plt
+
+# A ray from t = 0 to t = 1 through thin fog and a solid surface (as in the figure above)
+def density(t, surface=0.62):
+    return 4 * np.exp(-((t - 0.25) / 0.05) ** 2) + 80.0 * ((t >= surface) & (t <= surface + 0.07))
+
+def render_weights(t):
+    """Volume rendering weights w_i = T_i (1 - exp(-sigma_i delta_i)) for sorted samples."""
+    delta = np.diff(np.append(t, 1.0))
+    alpha = 1 - np.exp(-density(t) * delta)
+    T = np.cumprod(np.append(1.0, 1 - alpha[:-1]))
+    return T * alpha
+
+def sample_pdf(bin_edges, weights, n, rng):
+    """Draw n samples from the piecewise-constant pdf given by the coarse weights."""
+    w = np.pad(weights, 1)                             # widen each weight to its neighbors
+    w = 0.5 * (np.maximum(w[:-2], w[1:-1]) + np.maximum(w[1:-1], w[2:])) + 0.01
+    pdf = w / np.sum(w)
+    cdf = np.concatenate([[0.0], np.cumsum(pdf)])
+    u = (np.arange(n) + rng.random(n)) / n             # stratified uniform numbers
+    j = np.clip(np.searchsorted(cdf, u, side="right") - 1, 0, len(pdf) - 1)
+    frac = (u - cdf[j]) / np.maximum(cdf[j + 1] - cdf[j], 1e-9)
+    return bin_edges[j] + frac * (bin_edges[j + 1] - bin_edges[j])
+
+rng = np.random.default_rng(1)
+Nc, Nf = 32, 64                                        # try 8 and 88, or 64 and 128
+edges = np.linspace(0, 1, Nc + 1)
+
+def depth(t):
+    w = render_weights(t)
+    return np.sum(w * t) / np.sum(w)
+
+def hierarchical():
+    t_coarse = edges[:-1] + rng.random(Nc) / Nc        # stratified samples
+    t_fine = sample_pdf(edges, render_weights(t_coarse), Nf, rng)
+    return t_coarse, t_fine
+
+def uniform():
+    return np.sort((np.arange(Nc + Nf) + rng.random(Nc + Nf)) / (Nc + Nf))
+
+t_dense = (np.arange(20000) + 0.5) / 20000
+truth = depth(t_dense)
+err_h = np.mean([abs(depth(np.sort(np.concatenate(hierarchical()))) - truth) for _ in range(300)])
+err_u = np.mean([abs(depth(uniform()) - truth) for _ in range(300)])
+print(f"expected depth (dense reference): {truth:.4f}")
+print(f"mean error, coarse + fine ({Nc}+{Nf}): {err_h:.4f}")
+print(f"mean error, {Nc + Nf} evenly spread:     {err_u:.4f}")
+
+t_coarse, t_fine = hierarchical()
+w_coarse = render_weights(t_coarse)
+fig, ax = plt.subplots(figsize=(10, 2.8))
+ax.fill_between(t_dense, np.minimum(density(t_dense), 10) / 10, color="0.8", label="density (clipped)")
+ax.bar(edges[:-1], w_coarse / w_coarse.max(), width=1 / Nc, align="edge", alpha=0.35, color="#3b82c4", label="coarse weights")
+ax.plot(t_coarse, np.zeros(Nc) - 0.08, "o", color="#3b82c4", label="coarse samples")
+ax.plot(t_fine, np.zeros(Nf) - 0.18, "|", ms=14, color="#cfb97d", mew=2, label="fine samples")
+ax.set_xlabel("t along the ray"); ax.set_yticks([]); ax.legend(loc="upper left", fontsize=8)
+plt.show()
+```
+
+The expected depth $\sum_i w_i t_i / \sum_i w_i$ computed here is also how NeRFs produce **depth maps**: the same weights that blend colors can blend distances.
+
+## Limitations of the original NeRF
+
+The original NeRF produced remarkable images, but it had clear limits:
+
+- **Slow training.** One scene took one to two days on a single high-end GPU.
+- **Slow rendering.** Every pixel needs a couple of hundred network queries, so one high-resolution image took tens of seconds.
+- **One network per scene.** Nothing learned on one scene transfers to the next.
+- **Many views.** Sparse captures give blurry or wrong geometry, as the flatland demo showed.
+- **Static scenes only.** Anything that moves during the capture becomes a ghost.
+- **Bounded scenes and fixed scale.** Large outdoor scenes, and cameras at very different distances, cause artifacts.
+
+Most of the follow-up work attacks one of these limits. The rest of this chapter visits the main ideas.
+
+## Beyond the original NeRF
+
+### Anti-aliasing: mip-NeRF
+
+Train a NeRF on images taken from roughly the same distance and it works well. Render it from much farther away, or at a lower resolution, and fine textures turn into jagged, shimmering patterns. The reason is **aliasing**, the same problem we met when downsampling images. A pixel far from the camera covers a large patch of the scene, but NeRF samples the field along an infinitely thin ray, so it reads one point where it should read an average.
+
+In image processing the cure is to **prefilter**: blur before you sample. Graphics hardware does this efficiently with **mipmaps** (from the Latin *multum in parvo*, "much in little"), a pyramid of prefiltered copies of each texture from which the renderer reads the level that matches each pixel's footprint. Building a pyramid of whole radiance fields is impractical, so **mip-NeRF** (Barron et al., 2021) moves the prefiltering into the encoding. It casts a **cone** through each pixel instead of a ray, approximates each segment of the cone by a Gaussian with mean $\boldsymbol{\mu}$ and variance $\sigma^2$, and uses the *expected* encoding over that Gaussian, the **integrated positional encoding**. For a sinusoid of frequency $\omega$ the expectation has a closed form,
+
+$$
+\mathbb{E}\bigl[\sin(\omega x)\bigr] = \sin(\omega \mu)\, e^{-\frac{1}{2}\omega^2 \sigma^2},
+$$
+
+so frequencies too fine for the footprint fade away automatically. A single network then represents the scene at every scale.
+
+Zoom out in the figure below. The pattern's stripes get finer toward the edges. Point sampling (one value per pixel, like NeRF) produces false rings; averaging over each pixel's footprint gives the correct smooth gray. The bars show how the integrated encoding weights each frequency level for the current footprint.
+
+```{=html}
+<div class="sim" id="mip-sim">
+  <div class="nf-pair">
+    <figure><canvas class="nf-pixels" aria-label="Pattern sampled at pixel centers"></canvas><figcaption>One sample per pixel (NeRF)</figcaption></figure>
+    <figure><canvas class="nf-pixels" aria-label="Pattern averaged over each pixel"></canvas><figcaption>Average over the pixel footprint (mip-NeRF)</figcaption></figure>
+  </div>
+  <canvas class="nf-chart" width="720" height="170" aria-label="Integrated positional encoding weight per frequency level"></canvas>
+  <div class="sim__controls">
+    <label>Zoom out <input type="range" name="zoom" min="0.5" max="4" step="0.1" value="1"><output></output></label>
+  </div>
+  <p class="sim__readout"></p>
+</div>
+```
+
+### Unbounded scenes: mip-NeRF 360
+
+A robot or a phone often captures a scene by walking around an object, with the background extending to the horizon. Representing all of Euclidean space with a fixed-size network is wasteful, and distant content is seen by few rays at very different scales. **Mip-NeRF 360** (Barron et al., 2022) **contracts** space so that everything fits in a ball of radius 2:
+
+$$
+\operatorname{contract}(\mathbf{x}) =
+\begin{cases}
+\mathbf{x}, & \lVert \mathbf{x} \rVert \le 1, \\[4pt]
+\Bigl(2 - \dfrac{1}{\lVert \mathbf{x} \rVert}\Bigr) \dfrac{\mathbf{x}}{\lVert \mathbf{x} \rVert}, & \lVert \mathbf{x} \rVert > 1 .
+\end{cases}
+$$
+
+The foreground keeps its full resolution while the background, all the way to infinity, is squeezed into a thin shell, much as perspective itself compresses distant objects. Samples along each ray are spaced evenly in *disparity* (inverse distance) to match. Mip-NeRF 360 also trains a small "proposal" network to predict where to sample, and adds a regularizer that discourages floaters.
+
+### Speed: Instant-NGP
+
+**Instant neural graphics primitives** (Müller et al., 2022) cut training from hours to seconds or minutes on one GPU. The idea is to let a learned data structure do most of the work, so the network can be tiny. Space is covered by $L$ grids of increasing resolution, from $N_{\min}$ cells per side up to a fine resolution, each finer by a growth factor $b$. Each grid vertex holds a short learned **feature vector**. To encode a point, each level interpolates the features of the corners of the cell around it, and the features of all levels are concatenated and fed to a small MLP.
+
+A dense fine 3D grid would need far too much memory, so each level stores its features in a **hash table** of fixed size $T$. Coarse levels have fewer vertices than table entries and get one entry per vertex. Fine levels map vertices into the table with a spatial hash,
+
+$$
+h(\mathbf{x}) = \Bigl(\, \bigoplus_{i=1}^{d} x_i\, \pi_i \Bigr) \bmod T,
+$$
+
+where $\oplus$ is bitwise XOR and the $\pi_i$ are large primes. Collisions are not resolved at all. They rarely hurt, because the gradients from the few vertices near real surfaces dominate those of the many vertices in empty space, and because the other levels disambiguate. Move the point and the settings in the 2D version below.
+
+```{=html}
+<div class="sim" id="hash-sim">
+  <canvas class="nf-wide nf-pick" width="720" height="380" aria-label="A point in a multiresolution grid and the hash table entries it reads at each level"></canvas>
+  <div class="sim__controls">
+    <label>Levels L <input type="range" name="levels" min="1" max="8" step="1" value="6"><output></output></label>
+    <label>Growth b <input type="range" name="growth" min="1.2" max="2" step="0.05" value="1.6"><output></output></label>
+    <label>Table size T <input type="range" name="table" min="4" max="14" step="1" value="8"><output></output></label>
+  </div>
+  <p class="sim__readout"></p>
+</div>
+```
+
+The colored squares are the cells around the black point at each level; the strips on the right are the hash tables, with the four entries the point reads marked. At coarse levels the entries are neighbors in the table. At fine levels they scatter across it, and many other vertices share each entry. Instant-NGP uses 16 levels, tables of $2^{14}$ to $2^{24}$ entries, and two features per entry, with an MLP of only one or two hidden layers. The idea was quickly picked up by **Zip-NeRF** (Barron et al., 2023), which combines the anti-aliasing of mip-NeRF 360 with grid-based features and reports training about 24 times faster than mip-NeRF 360 with lower error.
+
+### Dynamic scenes: D-NeRF
+
+A NeRF assumes the scene does not move. **D-NeRF** (Pumarola et al., 2021) handles non-rigid motion, such as a person or a deforming object, from a single moving camera. It splits the model into two networks. A **deformation network** takes a point $\mathbf{x}$ and a time $t$ and returns an offset $\Delta\mathbf{x}$ that maps the point into a shared **canonical** configuration. A **canonical network**, an ordinary NeRF, then gives the color and density there. Because all frames share one canonical scene, each frame helps reconstruct the others even though each time instant was seen from only one viewpoint.
+
+### Fewer views: depth supervision
+
+Structure from motion gives more than camera poses: it also triangulates a sparse set of 3D points. **Depth-supervised NeRF** (DS-NeRF, Deng et al., 2022) adds a loss that encourages each ray's weight distribution to peak at the depth of the matching keypoint. This cheap extra signal rules out many of the wrong solutions we saw in the flatland demo. The authors report two to three times faster training and much better results from few views, even from only two.
+
+## NeRFs on robots
+
+Radiance fields have quickly entered robotics. They serve as dense maps for **SLAM** systems that track the camera while training the field online, as photorealistic **simulators** in which to test planners and train policies, and as scene models for **grasping** transparent and reflective objects that fool depth cameras. The cost of querying a network hundreds of times per pixel is the main obstacle on small robots, which is one reason the field moved toward grids, hash encodings and, in the next chapter, explicit Gaussians.
+
+::: {.callout-tip}
+## Exercise
+A NeRF renders a 640 × 480 image. As in the original method, the coarse network is queried at $N_c = 64$ samples per ray and the fine network at all $N_c + N_f = 192$. How many network evaluations does one image need? If the GPU evaluates 50 million points per second, what frame rate results? What would you change first to reach 30 frames per second?
+:::
+
+## Summary
+
+- A NeRF represents a scene as a radiance field $F_\Theta(\mathbf{x}, \mathbf{d}) = (\mathbf{c}, \sigma)$ stored in a multilayer perceptron. Density depends on position only; color also depends on viewing direction.
+- Pixels are rendered with differentiable volume rendering, so the network is trained by gradient descent on the difference between rendered and observed pixels, using only posed images.
+- Positional encoding maps coordinates to sinusoids of increasing frequency and overcomes the spectral bias of MLPs toward smooth functions.
+- Hierarchical sampling uses the weights of a coarse pass as a distribution for placing fine samples near surfaces.
+- The original NeRF is slow, scene-specific, data hungry and limited to static, bounded scenes. Mip-NeRF and mip-NeRF 360 handle scale and unbounded scenes, Instant-NGP and Zip-NeRF make training fast with multiresolution hash grids, D-NeRF handles motion, and depth supervision helps with few views.
+
+NeRF showed that a scene can be learned from photos by differentiating through a renderer. Its weakness is speed: every pixel needs hundreds of queries. The next chapter keeps the differentiable volume rendering but replaces the network with millions of explicit 3D Gaussians that can be rasterized in real time: **3D Gaussian splatting**.
+
+```{=html}
+<script src="../demos/nerf.js"></script>
+```

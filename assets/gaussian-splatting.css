@@ -1,0 +1,83 @@
+/* Chapter: 3D Gaussian Splatting */
+
+.gs-wide {
+  display: block;
+  width: 100%;
+  height: auto;
+  border-radius: 12px;
+  background: rgba(207, 185, 125, 0.06);
+  touch-action: none;
+  cursor: grab;
+}
+
+.gs-wide:active {
+  cursor: grabbing;
+}
+
+.gs-dark {
+  background: #111;
+}
+
+.gs-matrix {
+  margin: 0.7rem 0 0;
+  padding: 0.6rem 0.8rem;
+  overflow-x: auto;
+  border-radius: 10px;
+  background: rgba(207, 185, 125, 0.08);
+  font-size: 0.8rem;
+  line-height: 1.45;
+  white-space: pre;
+}
+
+.gs-pair {
+  display: grid;
+  grid-template-columns: 1fr 1fr;
+  gap: 0.6rem;
+}
+
+.gs-pair figure {
+  margin: 0;
+}
+
+.gs-pair canvas {
+  display: block;
+  width: 100%;
+  height: auto;
+  border-radius: 12px;
+  background: #14181e;
+}
+
+.gs-pair figcaption {
+  margin-top: 0.3rem;
+  font-size: 0.85rem;
+  opacity: 0.7;
+  text-align: center;
+}
+
+.gs-clone { color: #16a34a; font-weight: 700; }
+.gs-split { color: #d97706; font-weight: 700; }
+
+.sim__controls .gs-check {
+  gap: 0.35rem;
+}
+
+.sim__controls .gs-check input {
+  accent-color: #cfb97d;
+}
+
+/* Pipeline diagram */
+.gs-pipeline { display: block; width: 100%; height: auto; margin: 1.2rem 0; }
+.gs-box { fill: rgba(207, 185, 125, 0.12); stroke: #cfb97d; stroke-width: 1.5; }
+.gs-box--learn { fill: rgba(224, 90, 71, 0.1); stroke: #e05a47; }
+.gs-step { fill: currentColor; font-family: "Nunito Sans", sans-serif; font-size: 14px; font-weight: 700; text-anchor: middle; }
+.gs-note { fill: currentColor; opacity: 0.7; font-family: "Open Sans", sans-serif; font-size: 11.5px; text-anchor: middle; }
+.gs-arrow { stroke: currentColor; stroke-opacity: 0.6; stroke-width: 1.6; fill: none; }
+.gs-arrow--back { stroke: #e05a47; stroke-opacity: 0.9; stroke-dasharray: 6 4; }
+.gs-head { fill: currentColor; fill-opacity: 0.6; }
+.gs-head--back { fill: #e05a47; }
+
+@media (max-width: 600px) {
+  .gs-pair {
+    grid-template-columns: 1fr;
+  }
+}

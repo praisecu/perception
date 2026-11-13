@@ -45,6 +45,12 @@ book:
     - part: "Multiple Views"
       chapters:
         - chapters/stereo.qmd
+        - chapters/sfm.qmd
+    - part: "Neural Scene Representations"
+      chapters:
+        - chapters/volumetric.qmd
+        - chapters/nerf.qmd
+        - chapters/gaussian-splatting.qmd
 
 format:
   live-html:

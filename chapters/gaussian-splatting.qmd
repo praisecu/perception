@@ -1,0 +1,448 @@
+---
+# Editable code runs in the reader's browser (Pyodide), not at build time.
+engine: markdown
+pyodide:
+  packages:
+    - numpy
+    - matplotlib
+---
+
+# 3D Gaussian Splatting {#sec-gaussian-splatting}
+
+```{=html}
+<link rel="stylesheet" href="../assets/gaussian-splatting.css">
+```
+
+The previous chapters represented a scene as a continuous field: a density and a color at every point in space, queried by a neural network and integrated along each camera ray. The results are beautiful, but every pixel needs hundreds of network evaluations, so rendering a single image can take seconds.
+
+**3D Gaussian Splatting** (3DGS), introduced by Kerbl and colleagues in 2023, keeps the same image formation model but changes the representation. The scene becomes a large set of small, semi-transparent, colored 3D Gaussians: fuzzy ellipsoids. To render a view, each Gaussian is projected onto the image as a 2D ellipse, a *splat*, and the splats are blended from front to back. There is no network and no ray marching, only projection, sorting and blending, the operations graphics hardware is built for. The payoff is real-time rendering at quality that matches or beats the best radiance fields, with training measured in minutes instead of hours.
+
+::: {.callout-note appearance="simple"}
+**In this chapter.** Splatting as a rendering idea · a scene made of 3D Gaussians · covariance from rotation and scale · projecting a Gaussian with the Jacobian · alpha blending in depth order · tile-based rasterization · view-dependent color with spherical harmonics · optimization and adaptive density control · Gaussian splatting versus NeRF · limitations and extensions.
+:::
+
+## Splatting: throwing points at the screen
+
+Splatting is an old idea in graphics. In 1990, Lee Westover proposed rendering volumes not by casting rays through them but by projecting each voxel onto the image plane, where it leaves a small fuzzy *footprint*, like a snowball thrown at a window. Three steps make up the method:
+
+1. **Projection.** Each element's center is projected into the image.
+2. **Footprint.** A footprint function spreads the element's color and opacity over the nearby pixels.
+3. **Compositing.** Overlapping footprints are blended in depth order to form the final pixel colors.
+
+In 2001, Zwicker, Pfister, van Baar and Gross gave splatting a solid footing with **EWA splatting** (elliptical weighted average). If every element is a 3D Gaussian, its footprint on the image is, to a very good approximation, a 2D Gaussian whose shape follows from a simple matrix formula. Gaussian Splatting builds directly on this result. Its new ingredient is to make every step differentiable, so that millions of Gaussians can be *optimized* to reproduce a set of photographs.
+
+The whole method fits in one picture:
+
+```{=html}
+<svg class="gs-pipeline" viewBox="0 0 760 250" role="img" aria-label="Pipeline: photos, structure from motion, initial Gaussians, projection and sorting, alpha blending, comparison with the photo, then gradients and density control flow back to the Gaussians">
+  <defs>
+    <marker id="gs-ah" viewBox="0 0 10 10" refX="9" refY="5" markerWidth="7" markerHeight="7" orient="auto-start-reverse"><path class="gs-head" d="M0,0 L10,5 L0,10 z"/></marker>
+    <marker id="gs-ah-back" viewBox="0 0 10 10" refX="9" refY="5" markerWidth="7" markerHeight="7" orient="auto-start-reverse"><path class="gs-head--back" d="M0,0 L10,5 L0,10 z"/></marker>
+  </defs>
+  <rect class="gs-box" x="10" y="30" width="120" height="66" rx="10"/>
+  <text class="gs-step" x="70" y="58">Photos</text>
+  <text class="gs-note" x="70" y="78">many views</text>
+  <rect class="gs-box" x="160" y="30" width="140" height="66" rx="10"/>
+  <text class="gs-step" x="230" y="58">Structure from</text>
+  <text class="gs-step" x="230" y="76">motion</text>
+  <text class="gs-note" x="230" y="92">poses + sparse points</text>
+  <rect class="gs-box" x="330" y="30" width="130" height="66" rx="10"/>
+  <text class="gs-step" x="395" y="58">Gaussians</text>
+  <text class="gs-note" x="395" y="78">μ, R, S, opacity, color</text>
+  <rect class="gs-box" x="490" y="30" width="120" height="66" rx="10"/>
+  <text class="gs-step" x="550" y="58">Project + sort</text>
+  <text class="gs-note" x="550" y="78">EWA, tiles, depth</text>
+  <rect class="gs-box" x="640" y="30" width="110" height="66" rx="10"/>
+  <text class="gs-step" x="695" y="58">Blend</text>
+  <text class="gs-note" x="695" y="78">rendered image</text>
+  <rect class="gs-box gs-box--learn" x="610" y="160" width="140" height="62" rx="10"/>
+  <text class="gs-step" x="680" y="186">Loss</text>
+  <text class="gs-note" x="680" y="205">L1 + D-SSIM vs photo</text>
+  <rect class="gs-box gs-box--learn" x="300" y="160" width="230" height="62" rx="10"/>
+  <text class="gs-step" x="415" y="186">Gradients (Adam) +</text>
+  <text class="gs-note" x="415" y="205">clone, split, prune</text>
+  <path class="gs-arrow" d="M130,63 H156" marker-end="url(#gs-ah)"/>
+  <path class="gs-arrow" d="M300,63 H326" marker-end="url(#gs-ah)"/>
+  <path class="gs-arrow" d="M460,63 H486" marker-end="url(#gs-ah)"/>
+  <path class="gs-arrow" d="M610,63 H636" marker-end="url(#gs-ah)"/>
+  <path class="gs-arrow" d="M695,96 V156" marker-end="url(#gs-ah)"/>
+  <path class="gs-arrow gs-arrow--back" d="M610,191 H534" marker-end="url(#gs-ah-back)"/>
+  <path class="gs-arrow gs-arrow--back" d="M395,160 V100" marker-end="url(#gs-ah-back)"/>
+</svg>
+```
+
+Notice what is missing: there is **no neural network anywhere**. The scene is an explicit list of primitives, each with a handful of parameters, and gradient descent adjusts those parameters directly.
+
+## A scene made of Gaussians
+
+Each primitive is an anisotropic 3D Gaussian. Its shape is a function of position $\mathbf{x}$,
+
+$$
+G(\mathbf{x}) = \exp\!\Big(-\tfrac12\,(\mathbf{x}-\boldsymbol\mu)^\top \Sigma^{-1} (\mathbf{x}-\boldsymbol\mu)\Big),
+$$
+
+where $\boldsymbol\mu$ is its center and $\Sigma$ its $3\times3$ **covariance matrix**, which sets its size, elongation and orientation. Unlike the normalized Gaussian of probability theory, the peak is fixed at 1; how solid the Gaussian looks is controlled separately by an **opacity** $o \in [0, 1]$. Finally, each Gaussian has a **color**, which in general depends on the viewing direction, as we will see shortly.
+
+| Parameter | Symbol | Numbers |
+|---|---|---|
+| Position (mean) | $\boldsymbol\mu$ | 3 |
+| Scale along three axes | $\mathbf{s}$ | 3 |
+| Rotation, as a unit quaternion | $\mathbf{q}$ | 4 |
+| Opacity | $o$ | 1 |
+| Color, as spherical harmonic coefficients (degree 3) | $\mathbf{c}$ | 48 |
+| **Total per Gaussian** | | **59** |
+
+A typical scene uses one to several million Gaussians, so a model holds tens to hundreds of millions of numbers.
+
+### Covariance from rotation and scale
+
+A covariance matrix cannot be any symmetric matrix: it must be **positive semi-definite**, meaning its eigenvalues (the squared lengths of the ellipsoid's axes) are never negative. If we let gradient descent adjust the six entries of $\Sigma$ freely, a single step can easily leave this set, producing a "Gaussian" that has no physical meaning.
+
+Gaussian Splatting avoids the problem by never storing $\Sigma$ directly. It stores a scale vector $\mathbf{s}$ and a rotation $\mathbf{q}$ and builds the covariance as
+
+$$
+\Sigma = R\,S\,S^\top R^\top, \qquad S = \operatorname{diag}(s_x, s_y, s_z),
+$$
+
+where $R$ is the rotation matrix of the quaternion $\mathbf{q}$. This is exactly the eigen-decomposition of $\Sigma$: the columns of $R$ are the ellipsoid's axes and the scales are their lengths. Any rotation and any scales give a valid covariance, so the optimizer can move freely. In practice the scales are stored as logarithms (to keep them positive) and the quaternion is normalized before use.
+
+The figure shows the same idea in 2D, where a single angle replaces the quaternion. Drag the center, or the red and blue handles on the axes. Then switch to editing the entries of $\Sigma$ directly and push the off-diagonal entry up.
+
+```{=html}
+<div class="sim" id="gs-ellipse">
+  <canvas class="gs-wide" aria-label="A 2D Gaussian with its 1, 2 and 3 sigma contours and its two principal axes"></canvas>
+  <div class="sim__controls">
+    <button type="button" class="btn btn-gold-outline btn-sm is-on" data-mode="rs">Edit R and S</button>
+    <button type="button" class="btn btn-gold-outline btn-sm" data-mode="cov">Edit Σ directly</button>
+  </div>
+  <div class="sim__controls gs-controls-rs">
+    <label>Scale s₁ <input type="range" name="s1" min="8" max="140" step="1" value="90"><output></output></label>
+    <label>Scale s₂ <input type="range" name="s2" min="8" max="140" step="1" value="35"><output></output></label>
+    <label>Angle θ <input type="range" name="theta" min="0" max="180" step="1" value="30"><output></output></label>
+    <label>Opacity <input type="range" name="opacity" min="0.05" max="1" step="0.01" value="0.85"><output></output></label>
+  </div>
+  <div class="sim__controls gs-controls-cov" hidden>
+    <label>Σ<sub>xx</sub> <input type="range" name="sxx" min="64" max="19600" step="1" value="6400"><output></output></label>
+    <label>Σ<sub>xy</sub> <input type="range" name="sxy" min="-12000" max="12000" step="1" value="0"><output></output></label>
+    <label>Σ<sub>yy</sub> <input type="range" name="syy" min="64" max="19600" step="1" value="1600"><output></output></label>
+  </div>
+  <pre class="gs-matrix"></pre>
+  <p class="sim__readout"></p>
+</div>
+```
+
+## From 3D to the screen: projecting a Gaussian
+
+To render a Gaussian we need its footprint on the image. Its center is easy: project $\boldsymbol\mu$ with the camera model of @sec-camera-models. Its shape is harder, because perspective projection is not linear (it divides by depth), and a nonlinear function of a Gaussian is not a Gaussian.
+
+EWA splatting solves this with a first-order approximation. Near the center, the projection behaves like a linear map, given by its **Jacobian**. For a point $(x, y, z)$ in camera coordinates and the pinhole projection $u = f x / z$, $v = f y / z$,
+
+$$
+J = \frac{\partial(u, v)}{\partial(x, y, z)} = \begin{bmatrix} f/z & 0 & -f x / z^2 \\ 0 & f/z & -f y / z^2 \end{bmatrix}.
+$$
+
+A linear map $A$ turns a Gaussian with covariance $\Sigma$ into one with covariance $A \Sigma A^\top$. Applying first the world-to-camera rotation $W$ and then $J$ gives the **2D covariance of the splat**:
+
+$$
+\Sigma' = J\,W\,\Sigma\,W^\top J^\top .
+$$
+
+The result is a $2\times2$ matrix: the ellipse that the Gaussian paints on the image. Two terms in $J$ deserve attention. The $f/z$ terms shrink distant Gaussians, as perspective should. The last column, which depends on $x/z$ and $y/z$, skews Gaussians that sit away from the image center, the same stretching you see on objects near the edge of a wide-angle photo.
+
+In the figure, the gold dots are samples drawn from a 3D Gaussian and projected *exactly*. The red ellipses are the EWA approximation $J \Sigma J^\top$ (here the camera sits at the origin, so $W$ is the identity). Make the Gaussian large and bring it close to the camera, or slide it to the edge of the view, and watch the approximation degrade.
+
+```{=html}
+<div class="sim" id="gs-project">
+  <canvas class="gs-wide" aria-label="Left: a 3D Gaussian ellipsoid in front of a camera. Right: the camera image with projected samples and the EWA ellipse"></canvas>
+  <div class="sim__controls">
+    <label>Sideways x <input type="range" name="x" min="-1.6" max="1.6" step="0.01" value="0.35"><output></output></label>
+    <label>Depth z <input type="range" name="z" min="0.8" max="6" step="0.01" value="3"><output></output></label>
+    <label>Length <input type="range" name="len" min="0.05" max="1.2" step="0.01" value="0.5"><output></output></label>
+    <label>Width <input type="range" name="wid" min="0.03" max="0.8" step="0.01" value="0.15"><output></output></label>
+    <label>Yaw <input type="range" name="yaw" min="0" max="180" step="1" value="35"><output></output></label>
+    <label>Tilt <input type="range" name="tilt" min="0" max="90" step="1" value="20"><output></output></label>
+  </div>
+  <pre class="gs-matrix"></pre>
+  <p class="sim__readout"></p>
+</div>
+```
+
+In practice the error is small, because real scenes are made of millions of *small* Gaussians, each one far smaller than its distance to the camera. The renderer also adds a small constant (about 0.3 pixels²) to the diagonal of $\Sigma'$, so that no splat is thinner than about a pixel. This acts as a low-pass filter and prevents aliasing when tiny Gaussians fall between pixel centers.
+
+## Blending splats in depth order
+
+Once projected, each Gaussian contributes to a pixel $\mathbf{p}$ with an opacity
+
+$$
+\alpha_i = o_i \, \exp\!\Big(-\tfrac12\,(\mathbf{p}-\boldsymbol\mu_i')^\top \Sigma_i'^{-1} (\mathbf{p}-\boldsymbol\mu_i')\Big),
+$$
+
+where $\boldsymbol\mu_i'$ is the projected center. The pixel color blends the splats that overlap it, **sorted from nearest to farthest**:
+
+$$
+C(\mathbf{p}) = \sum_{i=1}^{N} \mathbf{c}_i\,\alpha_i \prod_{j=1}^{i-1} (1-\alpha_j) = \sum_{i=1}^{N} \mathbf{c}_i\,\alpha_i\,T_i .
+$$
+
+This is exactly the discrete volume rendering equation from the previous chapters. The **transmittance** $T_i$ is the fraction of light that survives all the splats in front of splat $i$. The difference lies in where the terms come from. A NeRF finds them by sampling points along each ray and querying a network at every sample. Gaussian Splatting reads them from a short, depth-sorted list of the splats that cover the pixel. The sum is the same; the cost of producing its terms is not.
+
+Ordering matters because blending is not commutative. Drag the probe, or the splats themselves, and compare sorted with unsorted blending.
+
+```{=html}
+<div class="sim" id="gs-composite">
+  <canvas class="gs-wide" aria-label="Five overlapping colored splats with a probe pixel, and a table of each splat's alpha, transmittance and weight at the probe"></canvas>
+  <div class="sim__controls">
+    <button type="button" class="btn btn-gold-outline btn-sm is-on" data-order="sorted">Sorted by depth</button>
+    <button type="button" class="btn btn-gold-outline btn-sm" data-order="list">Unsorted (list order)</button>
+    <label>Depth of red splat <input type="range" name="zred" min="1" max="4" step="0.1" value="3"><output></output></label>
+    <label>Opacity scale <input type="range" name="op" min="0.1" max="1" step="0.01" value="1"><output></output></label>
+  </div>
+  <p class="sim__readout"></p>
+</div>
+```
+
+Two practical details follow from the formula. Once $T$ drops below a small threshold (the original implementation uses $10^{-4}$), the pixel is effectively opaque and the remaining splats can be skipped. And opacities are clamped below 1 (to 0.99), so that gradients can still flow to the splats behind.
+
+## A fast, tile-based rasterizer
+
+Sorting millions of splats separately for every pixel would be far too slow. The Gaussian Splatting renderer instead works on **tiles** of $16 \times 16$ pixels:
+
+1. **Cull and project.** Gaussians outside the view frustum are discarded. The rest are projected, giving each a 2D center, covariance and a radius of three standard deviations.
+2. **Duplicate per tile.** Each splat is listed once for every tile its radius overlaps, with a 64-bit key that combines the tile index (high bits) and the depth (low bits).
+3. **Sort once.** A single GPU radix sort of all keys groups splats by tile and orders them by depth within each tile.
+4. **Blend per tile.** One block of GPU threads handles each tile, one thread per pixel. The threads load the tile's splats into fast shared memory together and blend them front to back, stopping early once their pixel is opaque.
+
+Because sorting happens per tile rather than per pixel, neighbouring pixels may see a slightly approximate order where splats overlap in depth. In practice the splats are small enough that this is rarely visible.
+
+The figure below runs the same steps on your CPU, without a GPU, for a real scene: the Blender render from @sec-learned-depth, turned into about 32 000 Gaussians using its exact depth map. Each Gaussian lies flat on the surface it came from. Compare it with raw points, look at the tile workload, and try the sparse cloud, which resembles what structure from motion gives the optimizer at the start.
+
+```{=html}
+<div class="sim" id="gs-scene">
+  <canvas class="gs-wide gs-dark" aria-label="A scene with drones on a wooden floor, rendered from Gaussians in the browser"></canvas>
+  <div class="sim__controls">
+    <button type="button" class="btn btn-gold-outline btn-sm is-on" data-view="splats">Gaussians</button>
+    <button type="button" class="btn btn-gold-outline btn-sm" data-view="points">Points only</button>
+    <button type="button" class="btn btn-gold-outline btn-sm" data-view="sparse">Sparse start</button>
+    <button type="button" class="btn btn-gold-outline btn-sm" data-action="tiles">Show tiles</button>
+    <button type="button" class="btn btn-gold-outline btn-sm" data-action="reset">Reset view</button>
+    <label>Splat size <input type="range" name="size" min="0.3" max="2.5" step="0.05" value="1"><output></output></label>
+    <label>Move forward <input type="range" name="dolly" min="0" max="1.6" step="0.02" value="0"><output></output></label>
+  </div>
+  <p class="sim__readout"></p>
+</div>
+```
+
+The dark gaps that open up behind the drones as you turn are parts of the scene that this single photo never saw; a real capture uses dozens or hundreds of photos from all around, so every surface is covered. Shrink the splats and gaps appear, as with the raw points; enlarge them and the image blurs. During training, the optimizer chooses each Gaussian's size, shape and opacity so that neither happens. Move forward and the tile workload near the drones grows, because nearby Gaussians project to large splats that cover many tiles.
+
+## Color that changes with the viewpoint
+
+Many surfaces look different from different directions. A glossy drone shell shows a highlight that slides as you move, and a wooden floor reflects the light at grazing angles. A single RGB value per Gaussian cannot capture this.
+
+Gaussian Splatting, following the earlier Plenoxels method, stores color as a function on the sphere of viewing directions, written in **spherical harmonics** (SH). These are the sphere's version of a Fourier series: a fixed set of basis functions $Y_\ell^m(\mathbf{d})$, organized by degree $\ell$, with higher degrees describing finer variation. The color seen from direction $\mathbf{d}$ is
+
+$$
+\mathbf{c}(\mathbf{d}) = \sum_{\ell=0}^{L} \sum_{m=-\ell}^{\ell} \mathbf{k}_\ell^m\, Y_\ell^m(\mathbf{d}),
+$$
+
+with one learned coefficient vector $\mathbf{k}_\ell^m$ (one value per color channel) for each basis function. Degree $L$ uses $(L+1)^2$ functions, so $L = 3$ needs 16 per channel, or 48 numbers per Gaussian. Degree 0 is a constant: plain, view-independent color.
+
+The left sphere shows a made-up glossy appearance: each point on it is the color seen when looking from that direction. The right sphere is its best least-squares fit with spherical harmonics. Drag to rotate both.
+
+```{=html}
+<div class="sim" id="gs-sh">
+  <canvas class="gs-wide" aria-label="Two spheres comparing a glossy appearance with its spherical harmonic approximation, and a plot of brightness against viewing angle"></canvas>
+  <div class="sim__controls">
+    <span class="sim__group">Degree
+      <button type="button" class="btn btn-gold-outline btn-sm" data-degree="0">0</button>
+      <button type="button" class="btn btn-gold-outline btn-sm" data-degree="1">1</button>
+      <button type="button" class="btn btn-gold-outline btn-sm is-on" data-degree="2">2</button>
+      <button type="button" class="btn btn-gold-outline btn-sm" data-degree="3">3</button>
+    </span>
+    <label>Highlight sharpness <input type="range" name="shine" min="1" max="80" step="1" value="20"><output></output></label>
+  </div>
+  <p class="sim__readout"></p>
+</div>
+```
+
+Spherical harmonics are a low-frequency description: a broad sheen fits well even at degree 1 or 2, while a mirror-like highlight never fits completely. Training usually starts with degree 0 and adds one degree every thousand iterations or so, so that the Gaussians first agree on their basic colors before they learn view-dependent effects.
+
+## Training: from photos to Gaussians
+
+### Starting from structure from motion
+
+Optimization needs a starting point. Gaussian Splatting takes it from **structure from motion** (@sec-sfm), typically the COLMAP software, which the input photos already need in order to recover their camera poses. Structure from motion also triangulates a sparse cloud of 3D points from matched features. One Gaussian is placed at each point, colored by the point's color, made isotropic (a sphere) with a radius equal to the mean distance to its three nearest neighbours, and given a low opacity. The "Sparse start" view in the scene figure above was built this way.
+
+### The loss and the optimizer
+
+Training repeats a simple loop. Pick one training photo, render the Gaussians from its camera, and compare:
+
+$$
+\mathcal{L} = (1-\lambda)\,\mathcal{L}_1 + \lambda\,\mathcal{L}_{\text{D-SSIM}}, \qquad \lambda = 0.2 .
+$$
+
+The $\mathcal{L}_1$ term compares pixel colors; the D-SSIM term (one minus the structural similarity index) rewards matching local structure and contrast. Because every step of the rasterizer is differentiable, the gradient of the loss flows back to every Gaussian's position, rotation, scale, opacity and color coefficients, and the Adam optimizer updates them all. A custom backward pass on the GPU walks each tile's sorted list again, this time from back to front, to compute these gradients without storing the per-pixel lists.
+
+### Adaptive density control
+
+The initial cloud has the wrong number of Gaussians in the wrong places: too few where the scene has fine detail, and some that are too large and blur several surfaces together. Every 100 iterations, **adaptive density control** fixes this:
+
+- **Clone.** Small Gaussians in *under-reconstructed* regions, where geometry is missing, are copied, and the copy is moved along the positional gradient.
+- **Split.** Large Gaussians in *over-reconstructed* regions, covering detail they cannot represent, are replaced by two smaller ones. Their positions are sampled from the original Gaussian and their scales are divided by 1.6.
+- **Prune.** Gaussians that have become almost transparent, or far too large, are removed.
+
+Both clone and split are triggered by the same signal: a large average gradient of the loss with respect to the Gaussian's projected position. A large positional gradient means the optimizer keeps trying to move the Gaussian, a sign that one Gaussian is not enough there. Every 3000 iterations, all opacities are also reset close to zero, which lets the optimizer re-earn them and prunes Gaussians that are not needed, for example "floaters" hovering in front of the cameras.
+
+The figure applies the same ideas to a 2D image. It begins with 48 random Gaussians and fits the target by gradient descent on the squared error, running live in your browser. Cloned Gaussians flash green and split ones orange. To keep the gradients simple, each 2D Gaussian here *adds* its color to the image instead of being alpha-blended in depth order, but the optimization and the density control work the same way.
+
+```{=html}
+<div class="sim" id="gs-fit">
+  <div class="gs-pair">
+    <figure><canvas aria-label="Target image"></canvas><figcaption>Target</figcaption></figure>
+    <figure><canvas aria-label="Current sum of 2D Gaussians"></canvas><figcaption>Sum of 2D Gaussians</figcaption></figure>
+  </div>
+  <div class="sim__controls">
+    <button type="button" class="btn btn-gold-outline btn-sm" data-action="run">Pause</button>
+    <button type="button" class="btn btn-gold-outline btn-sm" data-action="reset">Restart</button>
+    <span class="sim__group">Target
+      <button type="button" class="btn btn-gold-outline btn-sm is-on" data-target="scene">Drones</button>
+      <button type="button" class="btn btn-gold-outline btn-sm" data-target="text">Text</button>
+      <button type="button" class="btn btn-gold-outline btn-sm" data-target="rings">Rings</button>
+    </span>
+    <label class="gs-check"><input type="checkbox" name="adc" checked> Adaptive density control</label>
+    <label class="gs-check"><input type="checkbox" name="overlay"> Show ellipses</label>
+  </div>
+  <p class="sim__readout"></p>
+</div>
+```
+
+Turn density control off and restart: the fit is stuck with its 48 Gaussians and stays blurry, however long it runs. With density control on, the count grows to the budget of 400 and the new Gaussians gather where the image has edges and texture. Choose the text or rings target and show the ellipses to see how many thin Gaussians a single sharp edge requires.
+
+### Try it in code: why sharp edges are expensive
+
+A Gaussian is smooth, so a sum of Gaussians is a low-pass signal. The cell below fits a 1D signal, a gentle wave plus a box with two sharp edges, with more and more evenly spaced Gaussians. The smooth parts are captured quickly; the edges converge slowly. This is why densification adds so many Gaussians around edges and fine texture, and why Gaussian Splatting models often grow to millions of primitives.
+
+```{pyodide}
+import numpy as np
+import matplotlib.pyplot as plt
+
+x = np.linspace(0, 1, 1000)
+# A smooth wave plus a box with two sharp edges
+signal = 0.3 * np.sin(2 * np.pi * 2 * x) + np.where((x > 0.35) & (x < 0.65), 1.0, 0.0)
+
+def fit_gaussians(n):
+    """Best amplitudes for n evenly spaced Gaussians, each as wide as their spacing."""
+    centers = np.linspace(0, 1, n)
+    sigma = 1.0 / n
+    B = np.exp(-0.5 * ((x[:, None] - centers[None, :]) / sigma) ** 2)
+    w, *_ = np.linalg.lstsq(B, signal, rcond=None)
+    return B @ w
+
+near_edge = (np.abs(x - 0.35) < 0.03) | (np.abs(x - 0.65) < 0.03)
+counts = [8, 16, 32, 64, 128, 256]
+edge_err, smooth_err = [], []
+for n in counts:
+    e = np.abs(fit_gaussians(n) - signal)
+    edge_err.append(e[near_edge].mean())
+    smooth_err.append(e[~near_edge].mean())
+    print(f"{n:4d} Gaussians   error near edges {edge_err[-1]:.3f}   elsewhere {smooth_err[-1]:.4f}")
+
+fig, ax = plt.subplots(1, 2, figsize=(12, 3.6))
+ax[0].plot(x, signal, "k", lw=2.5, label="signal")
+for n in (8, 32, 128):
+    ax[0].plot(x, fit_gaussians(n), lw=1.4, label=f"{n} Gaussians")
+ax[0].set_title("Gaussians blur sharp edges"); ax[0].legend(fontsize=8)
+ax[1].loglog(counts, edge_err, "o-", label="near the edges")
+ax[1].loglog(counts, smooth_err, "s-", label="elsewhere")
+ax[1].set_xlabel("number of Gaussians"); ax[1].set_ylabel("mean error"); ax[1].legend()
+ax[1].set_title("Edges need far more Gaussians")
+plt.tight_layout()
+plt.show()
+```
+
+### Try it in code: reading a covariance
+
+Going the other way, from a cloud of points to a Gaussian, is a useful way to build intuition for $\Sigma$. The sample covariance of a set of points, decomposed into eigenvalues and eigenvectors, gives the rotation and scales of the Gaussian that best describes them. This is principal component analysis, and it is also a reasonable way to initialize a Gaussian from a small neighbourhood of points.
+
+```{pyodide}
+import numpy as np
+import matplotlib.pyplot as plt
+
+rng = np.random.default_rng(1)
+# 400 points on a thin strip tilted by 30 degrees, like a patch of surface
+local = rng.uniform(-1, 1, (400, 2)) * [1.0, 0.2]
+a = np.radians(30)
+R_true = np.array([[np.cos(a), -np.sin(a)], [np.sin(a), np.cos(a)]])
+pts = local @ R_true.T + [2.0, 1.0] + rng.normal(0, 0.02, (400, 2))
+
+mean = pts.mean(axis=0)
+Sigma = np.cov(pts.T)                     # 2 x 2 sample covariance
+evals, evecs = np.linalg.eigh(Sigma)      # ascending eigenvalues
+scales = np.sqrt(evals[::-1])             # long axis first
+long_axis = evecs[:, 1]
+angle = np.degrees(np.arctan2(long_axis[1], long_axis[0])) % 180
+
+print("covariance:\n", Sigma.round(4))
+print("scales (square roots of the eigenvalues):", scales.round(3))
+print("angle of the long axis:", angle.round(1), "degrees")
+
+t = np.linspace(0, 2 * np.pi, 200)
+fig, ax = plt.subplots(figsize=(6, 4))
+ax.scatter(*pts.T, s=4, alpha=0.5)
+for k in (1, 2, 3):
+    circle = np.stack([np.cos(t), np.sin(t)]) * scales[:, None] * k
+    ell = np.stack([long_axis, evecs[:, 0]], axis=1) @ circle
+    ax.plot(mean[0] + ell[0], mean[1] + ell[1], "k", lw=1, alpha=1.2 - 0.3 * k)
+ax.set_aspect("equal"); ax.set_title("Points and their 1, 2 and 3 sigma ellipses")
+plt.show()
+```
+
+::: {.callout-tip}
+## Exercise
+The strip is 2 units long and 0.4 units wide, yet the recovered scales are about 0.58 and 0.12. Why? (Hint: compute the standard deviation of a uniform distribution on $[-1, 1]$.) Then change the points to come from a Gaussian instead of a uniform strip, and check that the scales now match the standard deviations you chose.
+:::
+
+## Gaussian Splatting and NeRF
+
+Both methods learn a radiance field from posed photos and render it with the same alpha-compositing formula. They differ in how the field is stored and evaluated.
+
+| | Neural radiance fields | 3D Gaussian Splatting |
+|---|---|---|
+| Representation | Implicit: a network (or grid plus network) queried at any point | Explicit: a list of millions of Gaussians |
+| Rendering | Ray marching, many network queries per pixel | Project, sort and blend splats on the GPU |
+| Speed | Seconds per frame for the original NeRF; faster variants reach interactive rates | Real time, typically over 100 frames per second at 1080p |
+| Training | Hours for the highest-quality models | Tens of minutes on one GPU |
+| Memory | Compact: megabytes of network weights | Large: hundreds of megabytes for a big scene |
+| Empty space | Must be learned and skipped | Simply has no Gaussians |
+| Editing | Hard: content is spread through the weights | Natural: move, delete or copy Gaussians |
+| Geometry | Density field; surfaces must be extracted | Fuzzy ellipsoids; surfaces are not explicit either |
+
+The speed difference comes from the rendering step, not from the image formation model. A ray marcher must evaluate the scene at many empty or hidden points along every ray. A rasterizer only touches the Gaussians that actually project onto the image, and stops at each pixel once it is opaque.
+
+## Limitations and extensions
+
+Gaussian Splatting has prompted a very active line of research. A few directions address its main weaknesses:
+
+- **Low-pass primitives.** As the code cell showed, Gaussians struggle with sharp edges and need many splits, which costs memory. Generalized Exponential Splatting replaces the Gaussian with a generalized exponential function that can have sharper falloff, representing edges with far fewer primitives.
+- **Memory and compactness.** Scenes with millions of Gaussians are large. Pruning, quantization of the color coefficients, and compression schemes can shrink them by an order of magnitude. RadSplat, for example, first trains a NeRF as a robust prior and source of supervision, initializes the Gaussians from it, and adds a pruning step that yields compact scenes rendering at very high frame rates.
+- **Aliasing.** When the camera zooms far in or out of the training views, splats can become too thin or too fat. Anti-aliased variants such as Mip-Splatting add 3D and 2D filters to keep splats consistent across scales.
+- **Surfaces.** Fuzzy 3D blobs do not define a clean surface. Variants that flatten Gaussians into 2D disks, or that regularize them with depth and normal cues, give better geometry for meshing and for robots that need to know where surfaces are.
+- **Motion.** Dynamic and 4D variants let Gaussians move and deform over time to capture moving scenes.
+
+### Gaussians on robots
+
+Real-time rendering makes Gaussian Splatting attractive for robotics. Several SLAM systems use Gaussians as their map, tracking the camera by rendering the map and comparing it with each new frame, and adding Gaussians as new areas come into view. Because a Gaussian map can be rendered from any viewpoint, it also serves as a photorealistic **digital twin** in which planners and learned policies can be tested, and in which training images for perception networks can be generated. The open problems are the ones that matter for robots: memory on embedded hardware, maps that change over time, and reliable geometry for collision checking.
+
+## Summary
+
+- Gaussian Splatting represents a scene explicitly, as millions of 3D Gaussians, each with a position, a covariance, an opacity and a view-dependent color. There is no neural network.
+- The covariance is built as $\Sigma = R S S^\top R^\top$ from a rotation and three scales, which keeps it valid during optimization.
+- EWA splatting projects each Gaussian to a 2D Gaussian with covariance $\Sigma' = J W \Sigma W^\top J^\top$, using the Jacobian of the perspective projection as a local linear approximation.
+- Splats are sorted by depth and alpha-blended front to back with the same compositing formula as volume rendering. A tile-based GPU rasterizer sorts once per frame and blends tiles in parallel, which makes rendering real time.
+- Spherical harmonics up to degree 3 model view-dependent color with 48 numbers per Gaussian.
+- Training starts from structure-from-motion points, minimizes an L1 plus D-SSIM loss with Adam, and uses adaptive density control (clone, split and prune) to place Gaussians where detail requires them.
+- Compared with NeRF, Gaussian Splatting trades memory for speed. Current research targets sharper primitives, compact models, anti-aliasing, better surfaces and dynamic scenes.
+
+So far the scenes in this book have stood still while the camera moved. The next chapter looks at what happens when things in the scene move too, and at how a camera can measure that motion, pixel by pixel, from consecutive frames.
+
+```{=html}
+<script src="../demos/gaussian-splatting.js"></script>
+```

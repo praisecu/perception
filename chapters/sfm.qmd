@@ -1,0 +1,448 @@
+---
+# Editable code runs in the reader's browser (Pyodide), not at build time.
+engine: markdown
+pyodide:
+  packages:
+    - opencv-python
+    - matplotlib
+    - numpy
+---
+
+# Structure from Motion {#sec-sfm}
+
+```{=html}
+<link rel="stylesheet" href="../assets/sfm.css">
+```
+
+In @sec-stereo, two cameras looked at the same scene and we recovered their relative pose and the depth of the points they shared. A robot, a drone or a person with a phone does not stop at two pictures. They move and keep shooting, and every new image sees part of the scene from a new angle. **Structure from motion** (SfM) turns such a collection of images into two things at once: the **structure**, a 3D model of the scene, and the **motion**, the pose of the camera for every image.
+
+SfM is one of the great success stories of computer vision. It reconstructed whole cities from tourist photos on the internet, it builds the maps that let robots and phones localize themselves, and today it is the first step of almost every neural rendering pipeline, including the radiance fields and Gaussian splats of the next chapters. This chapter takes the pipeline apart piece by piece, using a set of eight rendered views of the drone scene from earlier chapters, for which we know the true answer.
+
+::: {.callout-note appearance="simple"}
+**In this chapter.** The SfM problem · feature tracks across many views · robust estimation of the essential matrix · how many RANSAC trials · four poses and the cheirality test · scale ambiguity · triangulation · registering new views with PnP · incremental reconstruction · bundle adjustment and its sparsity · three-view geometry · COLMAP outputs · SfM today.
+:::
+
+## The problem
+
+Imagine walking past a scene and taking eight photos. Each photo is a projection of the same 3D world through the same camera, but from an unknown position and orientation. SfM must answer two questions together:
+
+1. **Where was the camera** when each image was taken? These are the rotations $R_i$ and translations $t_i$, the *motion*.
+2. **Where are the scene points** in 3D? These are the points $X_j$, the *structure*.
+
+Neither question is easy on its own, and each depends on the other: if we knew the cameras, triangulation would give the points; if we knew the points, pose estimation would give the cameras. SfM solves for both, then refines everything together in one large optimization.
+
+Here are our eight views. They were rendered in Blender along an arc in front of the drones, so the true camera poses and the true 3D surface points are known exactly. Click a view in the strip to show it, then click one of the dots to follow that scene point from image to image.
+
+```{=html}
+<div class="sim" id="sfm-views">
+  <canvas class="sfm-big"></canvas>
+  <div class="sfm-strip"></div>
+  <div class="sim__controls">
+    <button type="button" class="btn btn-gold-outline btn-sm" data-action="tracks">Feature tracks: on</button>
+  </div>
+  <p class="sim__readout"></p>
+</div>
+```
+
+The image positions of one scene point across several views form a **feature track**. Tracks are the raw material of SfM. A point seen in only two views constrains the reconstruction weakly; a point seen in all eight ties all eight cameras together. Notice that the wall points survive across the whole sequence, while points near the frame edges or behind the nearest drone appear in just a few views.
+
+## The pipeline at a glance
+
+Most SfM systems, including the widely used open-source **COLMAP**, follow the same sequence of steps. Each step is a tool from an earlier chapter, now applied to many images at once.
+
+```{=html}
+<ol class="sfm-pipeline">
+  <li><a href="#sec-sfm-matching">Match features</a><small>keypoints and descriptors across image pairs</small></li>
+  <li><a href="#sec-sfm-robust">Estimate E or F robustly</a><small>RANSAC removes bad matches</small></li>
+  <li><a href="#sec-sfm-pose">Recover the pose</a><small>four candidates, one passes the cheirality test</small></li>
+  <li><a href="#sec-sfm-triangulation">Triangulate</a><small>the first 3D points</small></li>
+  <li class="is-loop"><a href="#sec-sfm-pnp">Register a new view</a><small>PnP against known points</small></li>
+  <li class="is-loop"><a href="#sec-sfm-ba">Bundle adjustment</a><small>refine all cameras and points</small></li>
+</ol>
+```
+
+Steps 1 to 4 build a seed reconstruction from two views. Steps 5 and 6 repeat for every remaining image. The dashed boxes mark this loop.
+
+## Matching features across views {#sec-sfm-matching}
+
+SfM begins with the features of @sec-features. Every image is searched for distinctive keypoints, such as SIFT or ORB features, and each keypoint gets a descriptor. Descriptors are then compared between pairs of images, and pairs of keypoints with similar descriptors become candidate **matches**. The ratio test from @sec-features discards matches whose best and second-best candidates are too similar to call.
+
+With many images, matching every pair is expensive: 1000 images give about half a million pairs. Large systems therefore match only promising pairs, chosen by image retrieval (images that "look alike"), by GPS tags or, for video, by time.
+
+Even after the ratio test, many matches are wrong. The figure below runs ORB matching in your browser with OpenCV.js. Because we know the true cameras, we can score every match against its true **epipolar line** (@sec-stereo): a correct match must lie on it. Choose a pair of views and press **Match features**.
+
+```{=html}
+<div class="sim" id="sfm-match">
+  <canvas class="sfm-wide"></canvas>
+  <div class="sim__controls">
+    <span class="sim__group">Views
+      <button type="button" class="btn btn-gold-outline btn-sm is-on" data-pair="3,4">4 and 5</button>
+      <button type="button" class="btn btn-gold-outline btn-sm" data-pair="2,5">3 and 6</button>
+      <button type="button" class="btn btn-gold-outline btn-sm" data-pair="0,7">1 and 8</button>
+    </span>
+    <button type="button" class="btn btn-gold-outline btn-sm" data-action="match">Match features</button>
+    <label>Tolerance <input type="range" name="thr" min="0.5" max="10" step="0.5" value="2"><output></output></label>
+  </div>
+  <p class="sim__readout">Press <b>Match features</b> to load OpenCV.js and match the two views.</p>
+</div>
+```
+
+Things to notice:
+
+- **Most matches are wrong.** In this scene, often only a third of the matches between neighboring views agree with the true geometry. The bricks repeat every few centimeters and the wood grain looks alike everywhere, so many keypoints have convincing lookalikes. Real scenes with windows, tiles or foliage behave the same way.
+- **Raise the tolerance** and watch red lines turn green. A tolerance of a pixel or two is typical: matches further from their epipolar line than that are almost certainly wrong.
+- **A match can sit on its epipolar line and still be wrong**, if the true match lies elsewhere along the same line. Click a few matches on the wall to see this. The epipolar constraint rejects many bad matches, but not all.
+
+In practice the true geometry is unknown, so it has to be estimated from these very matches, wrong ones included. That is the job of the next step.
+
+## Robust two-view geometry {#sec-sfm-robust}
+
+In @sec-stereo we met the **fundamental matrix** $F$, which links matching pixels $x$ and $x'$ through $x'^\top F x = 0$, and the **essential matrix** $E = [t]_\times R$, which does the same in calibrated coordinates $\hat x = K^{-1} x$:
+
+$$
+\hat{x}'^\top E\, \hat{x} = 0, \qquad E = K'^\top F K .
+$$
+
+The two differ in what they assume and in how many numbers they contain.
+
+| | Fundamental matrix $F$ | Essential matrix $E$ |
+|---|---|---|
+| Coordinates | pixels | calibrated (normalized) |
+| Needs calibration $K$ | no | yes |
+| Degrees of freedom | 7 (9 entries, minus scale, minus rank 2) | 5 (3 for rotation, 2 for the direction of $t$) |
+| Fewest matches | 7 (seven-point), 8 (eight-point, linear) | 5 (five-point algorithm) |
+| Gives $R$ and $t$ directly | no | yes, up to the scale of $t$ |
+
+A valid essential matrix has two equal nonzero singular values and a third equal to zero. Because SfM usually works with calibrated cameras (@sec-camera-models), most systems estimate $E$ directly with the **five-point algorithm**, or estimate $F$ and convert it with $E = K'^\top F K$, then project the result onto the space of valid essential matrices.
+
+### How many RANSAC trials?
+
+Every one of these estimators is wrapped in **RANSAC** (@sec-transformations): pick a minimal random sample of matches, fit a model, count the matches that agree with it, and keep the best model. RANSAC works only if at least one sample contains no outliers. If a fraction $\epsilon$ of the matches are outliers and each sample has $s$ matches, a single sample is clean with probability $(1-\epsilon)^s$. To find a clean sample with confidence $p$, we need
+
+$$
+N = \frac{\log(1 - p)}{\log\!\left(1 - (1 - \epsilon)^{s}\right)}
+$$
+
+trials. Explore the formula below. The dots are 60 matches, red for outliers; draw random samples and compare how often you get a clean one with the prediction.
+
+```{=html}
+<div class="sim" id="sfm-ransac">
+  <canvas class="sfm-plot"></canvas>
+  <canvas class="sfm-grid"></canvas>
+  <div class="sim__controls">
+    <label>Outliers <input type="range" name="e" min="0" max="0.8" step="0.05" value="0.4"><output></output></label>
+    <label>Confidence <input type="range" name="p" min="0.9" max="0.999" step="0.001" value="0.99"><output></output></label>
+    <span class="sim__group">Sample size
+      <button type="button" class="btn btn-gold-outline btn-sm" data-s="3">3</button>
+      <button type="button" class="btn btn-gold-outline btn-sm" data-s="5">5</button>
+      <button type="button" class="btn btn-gold-outline btn-sm" data-s="7">7</button>
+      <button type="button" class="btn btn-gold-outline btn-sm is-on" data-s="8">8</button>
+    </span>
+    <button type="button" class="btn btn-gold-outline btn-sm" data-action="one">Draw a sample</button>
+    <button type="button" class="btn btn-gold-outline btn-sm" data-action="many">Draw 500</button>
+  </div>
+  <p class="sim__readout"></p>
+</div>
+```
+
+The curves grow explosively with the outlier fraction, and faster for larger samples. At 50% outliers, the eight-point algorithm needs about 1,200 trials for 99% confidence, while the five-point algorithm needs about 150. This is the practical reason minimal solvers matter: fewer matches per sample means far fewer trials. For the drone images above, with about 70% outliers, the eight-point algorithm would need about 70,000 trials and the five-point algorithm about 1,900.
+
+## From the essential matrix to camera pose {#sec-sfm-pose}
+
+Given $E$, the relative rotation and the direction of translation follow from its singular value decomposition. The decomposition is not unique, though. Flipping the sign of $t$ gives the same $E$ up to sign, and so does turning the second camera by 180° about the baseline. Together these give **four candidate poses**, all equally consistent with every match.
+
+Only one of them is physically possible. The test is called the **cheirality condition**: triangulate the matches with each candidate, and keep the candidate that puts the points **in front of both cameras**, with positive depth in each. The figure below shows the four candidates for views 3 and 6, with the length of $t$ set to one. Points in front of both cameras keep their color from the image; points behind either camera are red.
+
+```{=html}
+<div class="sim" id="sfm-poses">
+  <canvas class="sfm-3d"></canvas>
+  <div class="sim__controls">
+    <button type="button" class="btn btn-gold-outline btn-sm" data-cand="0">A</button>
+    <button type="button" class="btn btn-gold-outline btn-sm" data-cand="1">B</button>
+    <button type="button" class="btn btn-gold-outline btn-sm" data-cand="2">C</button>
+    <button type="button" class="btn btn-gold-outline btn-sm" data-cand="3">D</button>
+  </div>
+  <p class="sim__readout"></p>
+</div>
+```
+
+One candidate places every point in front of both cameras. In the others, the reconstruction lands behind one camera or both, or splits between the two sides. With noise-free matches the winner is unanimous; with real data a few points near the cameras or near infinity can vote wrongly, so implementations count votes and pick the candidate with the most points in front.
+
+### Scale ambiguity
+
+Notice that the figure above had to *choose* the length of $t$. Images cannot measure it. Scale the whole world, including the distance between the cameras, by any factor, and every pixel stays exactly where it was:
+
+$$
+K\left(R\,(sX) + s\,t\right) \;\sim\; K\left(R X + t\right).
+$$
+
+```{=html}
+<div class="sim" id="sfm-scale">
+  <svg class="sim__svg" viewBox="0 0 720 400" role="img" aria-label="Top view of two cameras and five colored points, and the two images they produce"></svg>
+  <div class="sim__controls">
+    <label>Scale of the world <input type="range" name="s" min="0.4" max="1.3" step="0.01" value="1"><output></output></label>
+  </div>
+  <p class="sim__readout"></p>
+</div>
+```
+
+So SfM from images alone recovers the scene only **up to an unknown scale**, a similarity transformation with 7 degrees of freedom (3 for rotation, 3 for translation, 1 for scale). Reconstructions are usually expressed in units of the first baseline. To obtain meters, a robot adds one real distance: wheel odometry, an IMU, a stereo rig with a known baseline (@sec-stereo), GPS, or an object of known size in the scene. Learned depth (@sec-learned-depth) offers another route, by predicting metric depth from experience.
+
+The cell below checks this numerically. It projects a scene and the same scene ten times larger into two cameras, then asks OpenCV for the relative pose.
+
+```{pyodide}
+import numpy as np
+import cv2
+
+rng = np.random.default_rng(4)
+K = np.array([[600.0, 0, 320], [0, 600, 240], [0, 0, 1]])
+
+# A small scene and two cameras: the second is 30 cm to the right, turned 8 degrees
+X = np.c_[rng.uniform(-1, 1, 80), rng.uniform(-0.6, 0.6, 80), rng.uniform(3, 6, 80)]
+rvec2 = np.array([0.0, np.deg2rad(-8), 0.0])
+t2 = np.array([-0.30, 0.0, 0.02])
+
+def two_views(scale):
+    """Project the scene, scaled by `scale`, into both cameras."""
+    x1, _ = cv2.projectPoints(scale * X, np.zeros(3), np.zeros(3), K, None)
+    x2, _ = cv2.projectPoints(scale * X, rvec2, scale * t2, K, None)
+    return x1.reshape(-1, 2), x2.reshape(-1, 2)
+
+a1, a2 = two_views(1.0)
+b1, b2 = two_views(10.0)   # a world ten times larger, cameras ten times further apart
+print("largest pixel difference between the two worlds:",
+      f"{max(np.abs(a1 - b1).max(), np.abs(a2 - b2).max()):.2e} px")
+
+# OpenCV recovers the pose from the images, so the baseline length is unknowable
+for scale in (1.0, 10.0):
+    x1, x2 = two_views(scale)
+    E, _ = cv2.findEssentialMat(x1, x2, K, cv2.RANSAC, 0.999, 1.0)
+    _, R, t, _ = cv2.recoverPose(E, x1, x2, K)
+    print(f"true baseline {scale * np.linalg.norm(t2):5.2f} m -> recovered |t| = {np.linalg.norm(t):.2f}, "
+          f"direction {np.round(t.ravel(), 3)}")
+```
+
+## Triangulation {#sec-sfm-triangulation}
+
+With two posed cameras, each match defines two rays, and the 3D point lies where they meet. @sec-stereo showed how noise makes the rays miss each other and how the uncertainty stretches along the viewing direction. SfM uses triangulation in two flavors:
+
+- **Linear triangulation.** Each view gives two linear equations in the homogeneous point $X$, from the condition that $x$ and $PX$ point in the same direction, $x \times P X = 0$. Stacking the equations from two or more views and taking the singular vector with the smallest singular value gives $X$. This is fast, but it minimizes an algebraic quantity with no direct geometric meaning.
+- **Nonlinear triangulation.** Starting from the linear answer, adjust $X$ to minimize the **reprojection error**, the distance in pixels between where the point is observed and where it projects:
+
+$$
+\min_{X} \sum_{i} \left\| x_i - \pi(K, R_i, t_i, X) \right\|^2 ,
+$$
+
+where $\pi$ is the projection of @sec-camera-models. Pixel distance is the quantity that noise actually perturbs, so this answer is the statistically sensible one. It is solved with a few iterations of Gauss-Newton or Levenberg-Marquardt.
+
+Points triangulated from nearly parallel rays are unreliable, so SfM systems discard points whose **triangulation angle** is below a degree or two, as well as points that land behind a camera or reproject far from their observations.
+
+## Registering a new view: Perspective-n-Point {#sec-sfm-pnp}
+
+Once a seed reconstruction exists, each new image can be added without any more epipolar geometry. Its features match features already linked to 3D points, which gives **2D-3D correspondences**: pixel $x_j$ is the image of known point $X_j$. Estimating the camera pose from such correspondences is the **Perspective-n-Point** (PnP) problem.
+
+- **Linear PnP** treats the $3 \times 4$ projection matrix $P = K[R \mid t]$ as unknown. Each correspondence gives two linear equations, so six points suffice. The rotation recovered this way is not exactly orthonormal and must be cleaned up.
+- **Minimal PnP.** Three points determine the pose up to four solutions (**P3P**), and a fourth point picks the right one. Small samples make it the natural choice inside RANSAC.
+- **Nonlinear PnP** refines the pose by minimizing reprojection error over all inliers. The rotation is parameterized compactly, for example with a quaternion or an axis-angle vector (@sec-camera-models), so the optimizer cannot produce a matrix that is not a rotation.
+
+Try it yourself below. The image is view 6. Green circles are where known 3D points are observed; gold dots are where they project with your current guess of the camera pose; red lines join each pair. Move the sliders to line them up, then let OpenCV do it.
+
+```{=html}
+<div class="sim" id="sfm-pnp">
+  <canvas class="sfm-big"></canvas>
+  <div class="sim__controls">
+    <label>Right <input type="range" name="dx" min="-0.6" max="0.6" step="0.005" value="0"><output></output></label>
+    <label>Down <input type="range" name="dy" min="-0.6" max="0.6" step="0.005" value="0"><output></output></label>
+    <label>Forward <input type="range" name="dz" min="-0.6" max="0.6" step="0.005" value="0"><output></output></label>
+    <label>Pan <input type="range" name="yaw" min="-20" max="20" step="0.1" value="0"><output></output></label>
+    <label>Tilt <input type="range" name="pitch" min="-20" max="20" step="0.1" value="0"><output></output></label>
+    <label>Roll <input type="range" name="roll" min="-20" max="20" step="0.1" value="0"><output></output></label>
+  </div>
+  <div class="sim__controls">
+    <button type="button" class="btn btn-gold-outline btn-sm" data-action="outliers">Bad matches: none</button>
+    <button type="button" class="btn btn-gold-outline btn-sm" data-action="pnp">Solve with solvePnP</button>
+    <button type="button" class="btn btn-gold-outline btn-sm" data-action="ransac">Solve with solvePnPRansac</button>
+    <button type="button" class="btn btn-gold-outline btn-sm" data-action="reset">Reset</button>
+  </div>
+  <p class="sim__readout"></p>
+</div>
+```
+
+Things to try:
+
+- **Align by hand.** Sideways motion and panning both slide the points sideways, so they are easy to confuse. Points at different depths respond differently, which is what lets PnP tell them apart.
+- **Solve without outliers.** `solvePnP` lands within a few millimeters of the true pose; the leftover error comes from the half-pixel noise in the observations.
+- **Add bad matches, then solve again.** A plain least-squares fit tries to please the wrong correspondences too and is dragged far off. `solvePnPRansac` finds the inliers first, and the pose snaps back.
+
+## Incremental reconstruction
+
+Putting the pieces together gives **incremental SfM**, the strategy used by COLMAP and most classical systems:
+
+1. **Pick a seed pair** with many matches and a reasonable baseline. Estimate $E$, recover the pose, and triangulate the first points. The seed baseline defines the unit of length.
+2. **Choose the next view**, usually the one that sees the most already-reconstructed points.
+3. **Register it with PnP and RANSAC**, then refine its pose.
+4. **Triangulate new points** that the new view shares with registered views.
+5. **Run bundle adjustment** (next section) to refine everything, and remove points with large reprojection errors.
+6. Repeat from step 2 until no more views can be registered.
+
+The figure grows the reconstruction of our scene one view at a time, starting from views 4 and 5. The table below the 3D view is the **visibility matrix**: one row per view, one column per point, filled where the view sees the point. Gold columns are points already triangulated. Press **Add next view** a few times, then turn bundle adjustment off and start again.
+
+```{=html}
+<div class="sim" id="sfm-incremental">
+  <canvas class="sfm-3d"></canvas>
+  <canvas class="sfm-vis"></canvas>
+  <div class="sim__controls">
+    <button type="button" class="btn btn-gold-outline btn-sm" data-action="next">Add next view</button>
+    <button type="button" class="btn btn-gold-outline btn-sm is-on" data-action="ba">Bundle adjustment: on</button>
+    <button type="button" class="btn btn-gold-outline btn-sm" data-action="reset">Start again</button>
+  </div>
+  <p class="sim__readout"></p>
+</div>
+```
+
+Without bundle adjustment, every new view inherits the small pose error of the view it was registered against and adds its own, so the error grows along the sequence. This is **drift**, and it is why long trajectories bend, and why a loop that returns to its start fails to close. With bundle adjustment, the cameras and points are pulled back into agreement after each step. The figure simulates the pose errors rather than running a real pipeline, but the pattern is what a real system shows.
+
+The visibility matrix also explains the order in which views are added: the next view is one whose row overlaps the gold columns strongly, because those overlaps are its 2D-3D correspondences for PnP.
+
+## Bundle adjustment {#sec-sfm-ba}
+
+**Bundle adjustment** (BA) refines all camera poses and all 3D points together by minimizing the total reprojection error:
+
+$$
+\min_{\{R_i, t_i\},\,\{X_j\}} \;\sum_{i}\sum_{j} V_{ij}\,\rho\!\left(\left\| x_{ij} - \pi(K, R_i, t_i, X_j) \right\|^2\right),
+$$
+
+where $V_{ij}$ is 1 if view $i$ sees point $j$ (the visibility matrix), $x_{ij}$ is the observed pixel, and $\rho$ is an optional robust loss that limits the pull of remaining outliers. The name comes from the *bundles* of rays leaving each camera, which are adjusted until they pass through their points. The method was developed by photogrammetrists for aerial mapping decades before computer vision adopted it.
+
+The cost is nonlinear, so BA uses **Levenberg-Marquardt** (LM), which blends Gauss-Newton steps with cautious gradient steps. Each iteration linearizes the residuals with their Jacobian $J$ and solves
+
+$$
+\left(J^\top J + \lambda\, \mathrm{diag}(J^\top J)\right)\delta = -J^\top r ,
+$$
+
+increasing $\lambda$ when a step fails and decreasing it when a step succeeds.
+
+The figure below runs LM on a flat version of the problem: cameras and points live in a plane seen from above, and each camera sees a 1D image. Gold shows the current estimate and faint shapes show the truth. Shake the estimate with noise or drag points and cameras by hand, then press **Run**.
+
+```{=html}
+<div class="sim" id="sfm-ba">
+  <canvas class="sfm-flat"></canvas>
+  <canvas class="sfm-chart"></canvas>
+  <div class="sim__controls">
+    <label>Starting error <input type="range" name="noise" min="0" max="0.6" step="0.01" value="0.25"><output></output></label>
+    <button type="button" class="btn btn-gold-outline btn-sm" data-action="shake">Shake</button>
+    <button type="button" class="btn btn-gold-outline btn-sm" data-action="run">Run</button>
+  </div>
+  <p class="sim__readout"></p>
+</div>
+```
+
+Things to notice:
+
+- **Convergence is fast** from a good start: the error typically drops by orders of magnitude in a handful of iterations and then levels off at the noise in the measurements. It cannot go lower without fitting the noise.
+- **The result is close to, but not exactly, the truth.** The remaining error is the best the noisy measurements allow.
+- **From a bad start, BA can fail.** Raise the starting error to its maximum or drag a point behind a camera, and LM may settle in a wrong local minimum. BA is a refinement step: it needs the good initial guess that the rest of the pipeline provides.
+- **Something must be held fixed.** Because of the scale ambiguity, moving, turning or scaling the entire solution does not change the cost. This freedom is called the **gauge**. Here the first camera and the position of the second are fixed (blue) to remove it.
+
+### Why BA scales: sparsity
+
+A reconstruction with 1,000 images and a million points has about 3 million unknowns. A dense Jacobian of that size could never be stored, let alone solved. The rescue is **sparsity**: each observation depends on just one camera and one point, so each row of $J$ has at most nine nonzero entries (six for the camera, three for the point). Solvers exploit this structure with the **Schur complement**, which eliminates the points first and leaves a much smaller system in the cameras alone. Libraries such as Ceres Solver, g2o and GTSAM are built around this trick. The cell below shows the structure for a short sequence.
+
+```{pyodide}
+import numpy as np
+import matplotlib.pyplot as plt
+
+# A sequence of 12 views, each seeing points within a sliding window
+n_views, n_points = 12, 300
+rng = np.random.default_rng(0)
+first = np.sort(rng.integers(0, n_views - 1, n_points))
+length = rng.integers(2, 6, n_points)                       # track lengths of 2 to 5 views
+V = np.zeros((n_views, n_points), bool)
+for j in range(n_points):
+    V[first[j]:min(n_views, first[j] + length[j]), j] = True
+
+n_obs = V.sum()
+n_params = 6 * n_views + 3 * n_points                         # pose per view, position per point
+print(f"{n_obs} observations -> {2 * n_obs} residuals, {n_params} unknowns")
+
+# Each observation (i, j) touches only camera i's 6 numbers and point j's 3
+rows, cols = [], []
+r = 0
+for i in range(n_views):
+    for j in np.flatnonzero(V[i]):
+        for k in range(2):                                    # u and v residuals
+            rows += [r] * 9
+            cols += list(range(6 * i, 6 * i + 6)) + list(range(6 * n_views + 3 * j, 6 * n_views + 3 * j + 3))
+            r += 1
+J = np.zeros((r, n_params), bool)
+J[rows, cols] = True
+print(f"Jacobian: {J.shape[0]} x {J.shape[1]}, only {100 * J.mean():.2f}% of entries can be nonzero")
+
+fig, ax = plt.subplots(1, 3, figsize=(15, 4))
+ax[0].imshow(V, aspect="auto", cmap="Greys", interpolation="nearest")
+ax[0].set_title("Visibility matrix"); ax[0].set_xlabel("point"); ax[0].set_ylabel("view")
+ax[1].spy(J, markersize=0.3, aspect="auto")
+ax[1].set_title("Jacobian sparsity: cameras | points")
+ax[2].spy(J.T.astype(float) @ J.astype(float), markersize=0.3)
+ax[2].set_title("Normal matrix JᵀJ")
+plt.tight_layout()
+plt.show()
+```
+
+In the normal matrix $J^\top J$, the large lower-right block couples each point only with itself, so it is block diagonal and trivial to invert. That is the block the Schur complement eliminates.
+
+::: {.callout-tip}
+## Exercise
+In the cell above, change `n_views` to 100 and `n_points` to 5000. How many unknowns are there, and what fraction of the Jacobian can be nonzero? Roughly how large would the system be after eliminating the points?
+:::
+
+## Beyond pairs: three-view geometry
+
+Pairwise epipolar geometry does not capture everything about three or more views. Given a point's images in views 1 and 2, its position in view 3 can usually be predicted by intersecting two epipolar lines in view 3, one from each of the other views. The construction fails when the point lies in the plane through the three camera centers, the **trifocal plane**: there the two epipolar lines coincide, and their intersection is undefined. Lines in the scene give a second problem: a line seen in two views puts no constraint on the cameras at all.
+
+The **trifocal tensor**, a $3 \times 3 \times 3$ array, is the three-view counterpart of the fundamental matrix. It links points and lines across three views, transfers a line seen in two views into the third, and has no degenerate plane. Incremental SfM systems rarely estimate it explicitly, because bundle adjustment enforces multi-view consistency directly, but the same idea of using more than two views at once appears in many multi-camera rigs.
+
+## What SfM produces
+
+The output of SfM is a set of calibrated cameras and a sparse, colored point cloud. COLMAP writes it as three plain text files, a format that many later tools read, including the radiance field and Gaussian splatting systems of the coming chapters. Here are the three files for our eight views, filled with the true values from the renderer.
+
+```{=html}
+<div class="sim" id="sfm-colmap">
+  <div class="sim__controls">
+    <button type="button" class="btn btn-gold-outline btn-sm" data-file="cameras">cameras.txt</button>
+    <button type="button" class="btn btn-gold-outline btn-sm" data-file="images">images.txt</button>
+    <button type="button" class="btn btn-gold-outline btn-sm" data-file="points3D">points3D.txt</button>
+  </div>
+  <pre class="sfm-files"></pre>
+  <p class="sfm-caption">COLMAP stores each pose as world-to-camera: a quaternion (QW, QX, QY, QZ) for R and the vector t. The camera center is C = −Rᵀt. The ERROR column is zero here because these points are exact.</p>
+</div>
+```
+
+The sparse cloud is only the beginning. **Multi-view stereo** (MVS) takes the posed images and computes a depth map for every view, then fuses them into a dense point cloud or mesh. The famous *Building Rome in a Day* project matched about 150,000 internet photos of Rome, ran SfM on them, and then densely reconstructed landmarks such as the Colosseum.
+
+## SfM today
+
+SfM is a mature field, but it is changing quickly.
+
+- **Global SfM.** Instead of adding views one by one, global methods estimate all rotations at once from the pairwise geometry, then all positions, then run a single bundle adjustment. They are faster and avoid drift from a poor view order. GLOMAP is a recent open-source example built on COLMAP.
+- **Learned features and matchers.** SuperPoint keypoints matched with SuperGlue or LightGlue find many more correct matches than handcrafted features under large changes in viewpoint, lighting or season.
+- **Feed-forward reconstruction.** Networks such as DUSt3R, MASt3R and VGGT predict 3D point maps and camera poses directly from a handful of images in one forward pass, with no explicit RANSAC or bundle adjustment. They are often used to initialize, or even replace, the classical pipeline when there are few images or little texture.
+- **SLAM.** A robot cannot wait for all its images before it knows where it is. **Visual SLAM** (simultaneous localization and mapping) is SfM run causally, frame by frame, with bundle adjustment over a sliding window of recent keyframes and loop closure to remove drift. Adding an IMU fixes the scale and makes tracking robust to fast motion.
+
+## Summary
+
+- Structure from motion recovers camera poses and 3D scene points together from many images.
+- Feature tracks link one scene point across views. Matching is error-prone, especially on repetitive texture, so every geometric estimate is wrapped in RANSAC.
+- The number of RANSAC trials grows explosively with the outlier fraction and with the sample size, which is why minimal solvers (five-point, P3P) matter.
+- The essential matrix gives four candidate poses; the cheirality test keeps the one that puts points in front of both cameras.
+- Images alone fix a reconstruction only up to scale. One known distance converts it to meters.
+- Triangulation and PnP alternate as the reconstruction grows: known cameras give points, known points give cameras.
+- Bundle adjustment minimizes reprojection error over all cameras and points. It removes drift, needs a good starting point, and scales thanks to the sparsity of its Jacobian.
+- SfM output, cameras plus a sparse point cloud, is the starting point for dense reconstruction and for neural scene representations.
+
+The sparse points of SfM describe a scene only at a few thousand locations. The next chapters ask how to represent *everything* between them, so that we can render the scene from any new viewpoint. We start in @sec-volumetric with the physics of light passing through a volume.
+
+```{=html}
+<script src="../demos/opencv-loader.js"></script>
+<script src="../demos/sfm.js"></script>
+```

@@ -1,0 +1,407 @@
+---
+# Editable code runs in the reader's browser (Pyodide), not at build time.
+engine: markdown
+pyodide:
+  packages:
+    - numpy
+    - matplotlib
+---
+
+# Volumetric Rendering {#sec-volumetric}
+
+```{=html}
+<link rel="stylesheet" href="../assets/volumetric.css">
+```
+
+Every renderer we have built so far assumed that light travels in straight lines through empty space until it hits a surface. In @sec-curves-rendering, a ray either missed everything or stopped at the first triangle it met. That picture works for drones, walls and furniture, but not for fog on a runway, smoke from a fire, clouds, dust kicked up by a rotor, or the soft tissue in a medical scan. In these **participating media**, light interacts with the material at every point along its path, not only at a boundary.
+
+**Volumetric rendering** models this. Instead of a set of surfaces, the scene is described by a **density field**, a function that says how much "stuff" there is at every point in space, together with the color that stuff emits or reflects. To form a pixel, we follow the camera ray through the field and add up what every little piece of it contributes, discounted by everything in front of it.
+
+This chapter matters for perception as much as for graphics. Volume rendering is the image formation model behind Neural Radiance Fields and many other modern 3D reconstruction methods: because it is smooth and differentiable, a computer can adjust a density field until its renders match real photos. The next chapters build on exactly the equations derived here.
+
+::: {.callout-note appearance="simple"}
+**In this chapter.** Surfaces versus participating media · absorption, emission and scattering · transmittance and the Beer-Lambert law · fog in a real scene · the volume rendering integral · alpha compositing · sampling along a ray · density fields and surfaces · voxel grids and ray marching · signed distance fields and sphere tracing.
+:::
+
+## From surfaces to volumes
+
+Recall from @sec-curves-rendering that the brightness a camera records from a surface is its **radiance**: the power leaving a small patch of surface, per unit area, per unit solid angle, in the direction of the camera, measured in W/(m²·sr). A **Lambertian** surface is the idealized diffuse case whose radiance is the same from every viewing direction, because microscopic roughness scatters incoming light evenly. Radiance has a convenient property: in empty space it stays constant along a ray. That is why a surface renderer only needs to find the first hit.
+
+Inside a medium, radiance changes as the ray travels. Over a short distance $ds$ three things can happen to the light heading toward the camera:
+
+- **Absorption.** Some light is absorbed by the medium and turned into heat. Soot in smoke and ink in water absorb strongly.
+- **Scattering.** Some light is deflected into other directions (*out-scattering*), and some light arriving from other directions, for example from the sun, is deflected *into* the ray (*in-scattering*). Water droplets in fog and clouds scatter strongly and absorb little, which is why clouds are white.
+- **Emission.** The medium itself may produce light, as in a flame, a glowing gas, or a fluorescent dye.
+
+Together these give the **radiative transfer equation** (RTE), which describes how radiance $L$ changes along a ray:
+
+$$
+\frac{dL(s)}{ds} = \underbrace{-\,\sigma_a L(s)}_{\text{absorption}} \;\underbrace{-\,\sigma_s L(s)}_{\text{out-scattering}} \;+\; \underbrace{\sigma_a L_e(s)}_{\text{emission}} \;+\; \underbrace{\sigma_s L_{\text{in}}(s)}_{\text{in-scattering}} .
+$$
+
+Here $\sigma_a$ and $\sigma_s$ are the **absorption** and **scattering coefficients**, with units of 1/m. Their sum $\sigma = \sigma_a + \sigma_s$ is the **extinction coefficient**, usually just called the **density**. It is the probability per unit length that a photon interacts with the medium. The full RTE is expensive to solve because the in-scattering term depends on light arriving from every direction. Most of this chapter uses a simpler model that is the workhorse of scientific visualization and of NeRF.
+
+## Light attenuates: the Beer-Lambert law
+
+Start with the loss terms only. Light of radiance $L_0$ enters a medium of constant density $\sigma$. Over each small step $ds$ a fraction $\sigma\,ds$ is removed, so $dL/ds = -\sigma L$, and after a distance $d$,
+
+$$
+L(d) = L_0 \, e^{-\sigma d}.
+$$
+
+This is the **Beer-Lambert law**. The fraction that survives,
+
+$$
+T(d) = \frac{L(d)}{L_0} = e^{-\sigma d},
+$$
+
+is the **transmittance**. The product $\tau = \sigma d$ is the **optical depth**: one unit of optical depth lets through $e^{-1} \approx 37\%$ of the light, and every further unit cuts it by the same factor again. When the density varies along the path, the exponent becomes an integral,
+
+$$
+T(t) = \exp\!\left(-\int_0^{t} \sigma(s)\, ds\right),
+$$
+
+and transmittances multiply: the light that crosses two slabs is $T_1 T_2$.
+
+If the medium also emits (or scatters in) light of color $c$, each slice adds its own glow, which is then dimmed by the rest of the medium in front of it. For a uniform slab in front of a background $L_{\text{bg}}$ the result is a simple blend:
+
+$$
+L = T\,L_{\text{bg}} + (1 - T)\,c .
+$$
+
+Try it below. A slab of medium sits between the camera and a colorful background.
+
+```{=html}
+<div class="sim" id="vr-slab">
+  <canvas class="vr-canvas" aria-label="A colorful background seen through a slab of medium, with a plot of transmittance against distance"></canvas>
+  <div class="sim__controls">
+    <label>Density σ <input type="range" name="sigma" min="0" max="4" step="0.05" value="0.8"><output></output></label>
+    <label>Thickness d <input type="range" name="d" min="0" max="3" step="0.05" value="1"><output></output></label>
+    <span class="sim__group">
+      <button type="button" class="btn btn-gold-outline btn-sm is-on" data-medium="smoke">Black smoke</button>
+      <button type="button" class="btn btn-gold-outline btn-sm" data-medium="fog">White fog</button>
+      <button type="button" class="btn btn-gold-outline btn-sm" data-medium="glow">Orange glow</button>
+    </span>
+  </div>
+  <p class="sim__readout"></p>
+</div>
+```
+
+Doubling the thickness does not double the attenuation: it squares the transmittance. Black smoke only removes light, so it darkens the background. White fog removes the background but replaces it with its own brightness, so contrast falls while the overall image stays bright. This loss of contrast is exactly what a camera sees on a foggy morning.
+
+## Fog in a real scene
+
+In outdoor scenes the medium is everywhere, between the camera and every object. A point at distance $z$ is seen through a column of air of length $z$, so its transmittance is $e^{-\sigma z}$, and the image becomes
+
+$$
+I(x) = J(x)\, e^{-\sigma z(x)} + A \left(1 - e^{-\sigma z(x)}\right),
+$$
+
+where $J$ is the clear image and $A$ is the **airlight**, the color of the fog itself. This is Koschmieder's model from 1924, and it is still the basis of most image dehazing methods. It also says something useful for perception: the amount of haze at a pixel is a cue to its depth. Painters call this *aerial perspective*.
+
+The images on the right are physically based path-traced renders (Blender, Cycles) of the stereo scene from @sec-stereo, filled with fog of increasing density. The images on the left apply the equation above to the clear render, using the ground-truth depth of every pixel and an airlight color fitted to each render. Hover over either image to read the depth and the transmittance of a pixel.
+
+```{=html}
+<div class="sim" id="vr-fog">
+  <div class="vr-pair">
+    <figure><canvas></canvas><figcaption>Beer-Lambert model from depth</figcaption></figure>
+    <figure><canvas></canvas><figcaption>Path-traced fog (Blender)</figcaption></figure>
+  </div>
+  <div class="sim__controls">
+    <label>Fog density σ <input type="range" name="level" min="0" max="4" step="1" value="2"><output></output></label>
+  </div>
+  <p class="sim__readout"></p>
+</div>
+```
+
+The simple model is close, but not perfect, and the differences are instructive. The path tracer also attenuates the *sunlight* on its way down to the scene, so in dense fog the whole scene, and the airlight with it, gets darker. Multiple scattering adds a soft glow that a single blend cannot capture. A full volumetric renderer handles these effects; the simple model is what you get when the light reaching the medium is the same everywhere.
+
+## The volume rendering integral
+
+Now let the density $\sigma(\mathbf{x})$ and the color $c(\mathbf{x})$ vary from point to point. A camera ray $\mathbf{r}(t) = \mathbf{o} + t\,\mathbf{d}$ starts at the camera center $\mathbf{o}$ and travels in direction $\mathbf{d}$ between a near bound $t_n$ and a far bound $t_f$. Using the **emission-absorption model**, in which each point simply emits color $c$ in proportion to its density, the color of the pixel is
+
+$$
+C(\mathbf{r}) = \int_{t_n}^{t_f} T(t)\; \sigma\big(\mathbf{r}(t)\big)\; c\big(\mathbf{r}(t)\big)\, dt,
+\qquad
+T(t) = \exp\!\left(-\int_{t_n}^{t} \sigma\big(\mathbf{r}(s)\big)\, ds\right).
+$$
+
+Read the integrand from right to left. At distance $t$, the medium produces light $\sigma c\,dt$. That light must then travel back to the camera through everything between $t_n$ and $t$, so only the fraction $T(t)$ arrives. The product
+
+$$
+w(t) = T(t)\,\sigma\big(\mathbf{r}(t)\big)
+$$
+
+is a **weight**: it says how much the point at distance $t$ contributes to the pixel. The weights integrate to the pixel's total **opacity**, $\int w\,dt = 1 - T(t_f)$, which is at most one. Wherever the opacity falls short of one, the background shows through.
+
+In the figure below, a camera on the left looks through a 2D density field with three colored blobs. Drag the blobs, or drag anywhere else to aim the ray. The plot shows the density, the transmittance and the weight along the ray, and the swatch shows the final pixel.
+
+```{=html}
+<div class="sim" id="vr-ray">
+  <canvas class="vr-canvas vr-canvas--drag" aria-label="A 2D density field with three colored blobs and a camera ray passing through it"></canvas>
+  <canvas class="vr-canvas vr-chart" aria-label="Density, transmittance and weight along the ray"></canvas>
+  <div class="sim__controls">
+    <label>Density scale <input type="range" name="scale" min="0.2" max="8" step="0.1" value="1.2"><output></output></label>
+    <label>Blob edges: soft to hard <input type="range" name="sharp" min="1" max="10" step="0.5" value="1"><output></output></label>
+  </div>
+  <p class="sim__readout"></p>
+</div>
+```
+
+A few things to try. Line up two blobs along the ray: the far one is hidden behind the near one only if the near one is dense enough, otherwise both colors mix. Turn the density scale down and the pixel becomes a translucent blend weighted by how much of each blob the ray crosses. Turn the edges hard and the density scale up, and the weight collapses into a narrow spike at the first boundary: the volume now behaves like an opaque surface.
+
+## From the integral to a sum: alpha compositing
+
+A computer cannot evaluate the integral exactly, so we break the ray into $N$ segments with sample points $t_1 < t_2 < \dots < t_N$ and spacings $\delta_i = t_{i+1} - t_i$. Assume the density and color are constant within each segment. A segment of constant density $\sigma_i$ and length $\delta_i$ lets through $e^{-\sigma_i \delta_i}$ of the light, so it absorbs the fraction
+
+$$
+\alpha_i = 1 - e^{-\sigma_i \delta_i},
+$$
+
+which is its **opacity**, or **alpha**. The transmittance up to segment $i$ is the product of what all earlier segments let through, and the integral becomes a sum:
+
+$$
+\hat C = \sum_{i=1}^{N} T_i\, \alpha_i\, c_i,
+\qquad
+T_i = \prod_{j=1}^{i-1} \left(1 - \alpha_j\right) = \exp\!\left(-\sum_{j=1}^{i-1} \sigma_j \delta_j\right).
+$$
+
+This is the quadrature rule used by NeRF, and it is also the classic **alpha compositing** "over" operator from computer graphics, applied front to back: each sample is painted *behind* everything accumulated so far. Two details make it efficient:
+
+- **Front-to-back order** lets us keep a running transmittance $T$ and stop as soon as it falls below a small threshold such as 0.01. Nothing behind an opaque object can change the pixel, so this **early ray termination** skips most of the samples in scenes with solid objects.
+- The sum is **differentiable** in every $\sigma_i$ and $c_i$. If the rendered color is wrong, calculus tells us how to change each sample's density and color to fix it. This is what makes learning a 3D scene from images possible.
+
+Each column below is one sample along a ray, from near (left) to far (right). Drag a bar up or down to change its density, and click a color chip to change its color. The bars underneath show the alpha, the transmittance arriving at the sample, and its final weight.
+
+```{=html}
+<div class="sim" id="vr-composite">
+  <canvas class="vr-canvas vr-canvas--drag" aria-label="Eight samples along a ray, each with a density bar and a color chip, and the composited pixel color"></canvas>
+  <div class="sim__controls">
+    <label>Spacing δ <input type="range" name="delta" min="0.05" max="1" step="0.05" value="0.25"><output></output></label>
+    <span class="sim__group">
+      <button type="button" class="btn btn-gold-outline btn-sm" data-preset="fog">Thin fog</button>
+      <button type="button" class="btn btn-gold-outline btn-sm" data-preset="wall">Solid wall</button>
+      <button type="button" class="btn btn-gold-outline btn-sm" data-preset="glass">Tinted glass</button>
+    </span>
+  </div>
+  <p class="sim__readout"></p>
+</div>
+```
+
+The "Solid wall" preset shows early termination at work: once the transmittance is close to zero, the samples behind the wall (shown faded) cannot change the pixel, whatever their color. Notice also that $\alpha$ depends on the product $\sigma\delta$. Halving the spacing with the same densities makes every sample more transparent, and the total stays consistent because there are twice as many samples.
+
+## Sampling along the ray
+
+Where should the samples go? The simplest choice, evenly spaced points, has a serious flaw. If the scene contains a thin, dense surface, evenly spaced samples can step right over it, and they always step over it at the same place for every ray of the same length. The rendered image then shows aliasing artifacts such as banding and missing thin structures.
+
+Two standard fixes:
+
+- **Stratified sampling.** Divide $[t_n, t_f]$ into $N$ equal bins and draw one sample uniformly at random inside each bin. Every bin is still covered, but the exact positions change from ray to ray and from one iteration to the next. Over many rays or many training steps, every point along the ray gets visited, and the estimate becomes unbiased on average.
+- **Hierarchical (importance) sampling.** First render with a coarse set of stratified samples. Their weights $w_i = T_i\alpha_i$ show where along the ray the contributions come from. Normalize the weights into a probability distribution and draw a second, fine set of samples from it, so that samples concentrate near surfaces and are not wasted on empty space. NeRF uses 64 coarse and 128 fine samples per ray this way.
+
+The ray below crosses a thin surface in light fog. Compare the three strategies at different sample counts. Press **Resample** to draw new random positions, and watch the error plot, which averages each strategy over 300 random trials.
+
+```{=html}
+<div class="sim" id="vr-sampling">
+  <canvas class="vr-canvas" aria-label="A ray crossing a thin surface, with sample positions marked"></canvas>
+  <canvas class="vr-canvas vr-chart" aria-label="Average rendering error against the number of samples for three sampling strategies"></canvas>
+  <div class="sim__controls">
+    <span class="sim__group">
+      <button type="button" class="btn btn-gold-outline btn-sm is-on" data-method="uniform">Uniform</button>
+      <button type="button" class="btn btn-gold-outline btn-sm" data-method="stratified">Stratified</button>
+      <button type="button" class="btn btn-gold-outline btn-sm" data-method="hierarchical">Hierarchical</button>
+      <button type="button" class="btn btn-gold-outline btn-sm" data-action="resample">Resample</button>
+    </span>
+    <label>Samples N <input type="range" name="n" min="4" max="64" step="2" value="12"><output></output></label>
+    <label>Surface position <input type="range" name="pos" min="0.5" max="3.5" step="0.01" value="2.13"><output></output></label>
+    <label>Surface thickness <input type="range" name="width" min="0.01" max="0.4" step="0.01" value="0.05"><output></output></label>
+  </div>
+  <p class="sim__readout"></p>
+</div>
+```
+
+Uniform sampling is deterministic, so its error jumps around as the surface moves between sample positions: at some positions it sees the surface perfectly, at others it misses it entirely. Stratified samples are noisy in any single render but correct on average. Hierarchical sampling spends its fine samples where the coarse pass found weight, so it reaches a given accuracy with far fewer samples. In NeRF the coarse samples query a separate *coarse network*, which learns a blurrier version of the scene and therefore notices a thin surface even between its samples. The figure mimics this by giving the coarse pass a blurred copy of the density; the final color uses only the true density at all samples.
+
+## Density fields and surfaces
+
+A volume can represent a solid object too. Inside the object the density is high, outside it is zero, and the transition happens at the surface. If the density inside is $\sigma_{\max}$, a ray entering the object at depth $t_0$ has weight
+
+$$
+w(t) = \sigma_{\max}\, e^{-\sigma_{\max}(t - t_0)}, \qquad t \ge t_0 ,
+$$
+
+a spike of width about $1/\sigma_{\max}$. The **expected depth** $\sum_i w_i t_i$ then gives a depth map, and as the density grows it converges to the true surface. This is the sense in which surfaces are the limit of volumes, and it is how NeRF-style methods produce depth maps.
+
+Soft densities are not a defect. They are what make a volume easy to *optimize*: a gradient can tell a fuzzy blob to move or sharpen, while a hard surface either is or is not hit. Methods such as NeuS and VolSDF go one step further and define the density as a smooth function of a signed distance, so the network learns a crisp surface while keeping a well-behaved rendering integral.
+
+```{=html}
+<div class="sim" id="vr-surface">
+  <canvas class="vr-canvas vr-chart" aria-label="Density, transmittance and weight along a ray that enters a solid object"></canvas>
+  <div class="sim__controls">
+    <label>Density inside σ<sub>max</sub> <input type="range" name="smax" min="0.5" max="80" step="0.5" value="4"><output></output></label>
+    <label>Edge softness <input type="range" name="soft" min="0" max="0.5" step="0.01" value="0.1"><output></output></label>
+  </div>
+  <p class="sim__readout"></p>
+</div>
+```
+
+## Storing a volume: voxel grids
+
+To render a volume we need to be able to ask "what is the density and color at this point?" anywhere in space. The most direct answer is a **voxel grid**: a 3D array of values on a regular lattice, the 3D analogue of an image. CT and MRI scanners produce exactly this. Between lattice points the value is interpolated. **Nearest-neighbor** lookup is fast but blocky; **trilinear interpolation** blends the eight surrounding voxels and gives a continuous field.
+
+Grids are simple and fast but their memory grows with the cube of the resolution: a $512^3$ grid of RGBA floats needs 2 GB. Practical systems use sparse structures that store only occupied space, such as octrees or hash tables (Instant-NGP stores learned features in a multi-resolution hash grid), or replace the grid entirely with a neural network that maps a position to density and color, which is the idea behind NeRF.
+
+## Ray marching
+
+**Ray marching** is the algorithm that turns all of this into an image. For every pixel:
+
+1. Build the camera ray (@sec-camera-models) and intersect it with the volume's bounding box to find $t_n$ and $t_f$.
+2. Step along the ray in small increments. At each step, look up the density and color, compute $\alpha_i$, and add $T_i\alpha_i c_i$ to the pixel.
+3. Update the transmittance and stop early when it is nearly zero or when the ray leaves the box.
+
+To include lighting, each sample can also march a short **shadow ray** toward the light and compute how much light reaches it through the volume. This adds single scattering, which makes clouds look three-dimensional, with bright sunlit sides and dark undersides.
+
+The renderer below ray marches a procedural cloud stored in a voxel grid, entirely in your browser. Drag to orbit.
+
+```{=html}
+<div class="sim" id="vr-render">
+  <canvas class="vr-canvas vr-canvas--orbit" aria-label="A ray-marched volumetric cloud that can be orbited by dragging"></canvas>
+  <div class="sim__controls">
+    <label>Density <input type="range" name="density" min="0.5" max="30" step="0.5" value="8"><output></output></label>
+    <label>Steps per ray <input type="range" name="steps" min="4" max="160" step="1" value="64"><output></output></label>
+    <label>Grid resolution <input type="range" name="res" min="4" max="48" step="1" value="32"><output></output></label>
+    <span class="sim__group">
+      <button type="button" class="btn btn-gold-outline btn-sm is-on" data-light="lit">Sunlit (shadow rays)</button>
+      <button type="button" class="btn btn-gold-outline btn-sm" data-light="emit">Emission only</button>
+      <button type="button" class="btn btn-gold-outline btn-sm is-on" data-toggle="trilinear">Trilinear</button>
+      <button type="button" class="btn btn-gold-outline btn-sm is-on" data-toggle="early">Early termination</button>
+    </span>
+  </div>
+  <p class="sim__readout"></p>
+</div>
+```
+
+Lower the step count and the cloud develops visible slices, the same aliasing as before, now in 3D. Lower the grid resolution with trilinear interpolation turned off and the cloud turns into Lego bricks. Switch off the shadow rays and the cloud loses its shape cues, because emission alone has no notion of light direction. The readout shows how many samples each frame costs; this cost is the main obstacle to real-time volume rendering, and it is why games fake fog with cheap tricks and why later methods such as Gaussian splatting avoid marching altogether.
+
+## Surfaces by distance: sphere tracing
+
+Ray marching can also render ordinary *surfaces* quickly if the scene is described by a **signed distance field** (SDF): a function $f(\mathbf{x})$ that returns the distance from $\mathbf{x}$ to the nearest surface, positive outside and negative inside. Simple shapes have closed-form SDFs. A sphere of radius $r$ centered at $\mathbf{c}$ has $f(\mathbf{x}) = \lVert \mathbf{x} - \mathbf{c}\rVert - r$, and the SDF of several objects is the minimum of their SDFs.
+
+The SDF tells us how far we can safely step: no surface lies within a ball of radius $f(\mathbf{x})$ around the current point. **Sphere tracing** therefore steps exactly that far along the ray, re-evaluates, and repeats until the distance drops below a small tolerance (a hit) or the ray leaves the scene (a miss). Far from surfaces it takes huge steps, and near them it slows down automatically. Drag the camera or the aiming point below.
+
+```{=html}
+<div class="sim" id="vr-sdf">
+  <canvas class="vr-canvas vr-canvas--drag" aria-label="A 2D scene of shapes with its distance field, and a ray found by sphere tracing"></canvas>
+  <div class="sim__controls">
+    <span class="sim__group">
+      <button type="button" class="btn btn-gold-outline btn-sm is-on" data-march="sphere">Sphere tracing</button>
+      <button type="button" class="btn btn-gold-outline btn-sm" data-march="fixed">Fixed steps</button>
+    </span>
+    <label>Fixed step size <input type="range" name="step" min="4" max="60" step="1" value="20"><output></output></label>
+  </div>
+  <p class="sim__readout"></p>
+</div>
+```
+
+Watch the rays that pass close to an edge without hitting it: sphere tracing slows to a crawl there, taking many tiny steps. Fixed steps cost the same everywhere, and with a large step they can jump straight through thin objects. Learned SDFs, such as DeepSDF, use networks for $f$ and render them with exactly this loop.
+
+### Try it in code: compositing along one ray
+
+The cell below checks the quadrature rule against the exact answer. A ray crosses a slab of constant density, for which the transmittance is known in closed form. Try fewer samples, a denser slab, or a slab that is thinner than the sample spacing.
+
+```{pyodide}
+import numpy as np
+import matplotlib.pyplot as plt
+
+def composite(t, sigma, color, t_far):
+    """Front-to-back alpha compositing of samples at sorted positions t."""
+    delta = np.diff(np.append(t, t_far))
+    alpha = 1 - np.exp(-sigma * delta)
+    T = np.cumprod(np.append(1.0, 1 - alpha))[:-1]   # light that reaches each sample
+    w = T * alpha
+    return (w * color).sum(), w
+
+# A slab of density 3 between t = 1.0 and t = 1.5 on a ray from 0 to 4
+t_near, t_far, a, b, s = 0.0, 4.0, 1.0, 1.5, 3.0
+density = lambda t: np.where((t >= a) & (t < b), s, 0.0)
+exact = 1 - np.exp(-s * (b - a))                       # opacity of the slab
+
+for n in [4, 8, 16, 64, 256]:
+    t = np.linspace(t_near, t_far, n, endpoint=False)
+    opacity, _ = composite(t, density(t), np.ones(n), t_far)
+    print(f"N = {n:3d}: opacity {opacity:.4f}   exact {exact:.4f}")
+
+t = np.linspace(t_near, t_far, 64, endpoint=False)
+_, w = composite(t, density(t), np.ones(64), t_far)
+plt.figure(figsize=(7, 2.5))
+plt.bar(t, w, width=t[1] - t[0], align="edge", color="#cfb97d")
+plt.xlabel("distance along the ray t"); plt.ylabel("weight w")
+plt.show()
+```
+
+### Try it in code: rendering a cloud
+
+This cell ray marches a small volume with NumPy. The rays are parallel (an orthographic camera looking down the $z$ axis), so all the rays can be marched at once, one slice at a time. Besides the color image it computes the opacity and the expected depth of every pixel.
+
+```{pyodide}
+import numpy as np
+import matplotlib.pyplot as plt
+
+n = 96                                     # voxels per side
+x = np.linspace(-1, 1, n)
+X, Y, Z = np.meshgrid(x, x, x, indexing="ij")
+
+# Density: two soft balls and a solid box
+sigma = 8 * np.exp(-((X + 0.35) ** 2 + Y ** 2 + (Z + 0.3) ** 2) / 0.08)
+sigma += 4 * np.exp(-((X - 0.4) ** 2 + (Y - 0.2) ** 2 + Z ** 2) / 0.05)
+box = (abs(X + 0.2) < 0.3) & (abs(Y + 0.35) < 0.2) & (abs(Z - 0.4) < 0.25)
+sigma += 60 * box                          # the box is behind the red ball
+
+# Color: red on the left, blue on the right, gold in the box
+color = np.stack([0.5 + 0.5 * (X < 0), 0.3 + 0 * X, 0.5 + 0.5 * (X >= 0)], -1)
+color[box] = [0.81, 0.73, 0.49]
+
+delta = x[1] - x[0]
+C = np.zeros((n, n, 3)); T = np.ones((n, n)); depth = np.zeros((n, n))
+for k in range(n):                         # march front to back along z
+    alpha = 1 - np.exp(-sigma[:, :, k] * delta)
+    w = T * alpha
+    C += w[..., None] * color[:, :, k]
+    depth += w * (x[k] + 1)                # distance from the front face
+    T *= 1 - alpha
+
+fig, ax = plt.subplots(1, 3, figsize=(12, 4))
+ax[0].imshow(np.transpose(C, (1, 0, 2)), origin="lower"); ax[0].set_title("Color")
+ax[1].imshow((1 - T).T, origin="lower", cmap="gray"); ax[1].set_title("Opacity")
+ax[2].imshow(np.where(T < 0.5, depth / np.maximum(1 - T, 1e-6), np.nan).T,
+             origin="lower", cmap="turbo"); ax[2].set_title("Expected depth")
+for a in ax:
+    a.axis("off")
+plt.show()
+```
+
+::: {.callout-tip}
+## Exercise
+In the cloud cell, the box sits behind the red ball along the viewing direction. Lower the red ball's density factor from 8 to 1 and explain what happens to the color *and* to the expected depth of the pixels where they overlap. Why is expected depth a poor estimate for semi-transparent pixels?
+:::
+
+## Volumes in perception
+
+- **Neural Radiance Fields.** A NeRF replaces the voxel grid with a neural network that maps a 3D position and viewing direction to density and color, and trains it by rendering with the quadrature rule of this chapter and comparing against photos with known camera poses. The next chapter develops this in detail.
+- **Occupancy grids for robots.** Mapping systems for drones and ground robots store a 3D grid of occupancy probabilities, and update it by casting rays from a depth sensor. Free space along each ray and an obstacle at its end play the roles of low and high density.
+- **Seeing through media.** Underwater robots, drones in smoke and cars in fog all see through participating media. Inverting the Beer-Lambert model, as in dehazing, both restores contrast and reveals depth.
+- **Medical and scientific imaging.** CT, MRI and microscopy data are voxel grids, and volume rendering is how they are displayed.
+
+## Summary
+
+- In a participating medium, light is absorbed, scattered and emitted along the whole ray. The extinction coefficient, or density, $\sigma$ sets how quickly light is lost.
+- Transmittance falls exponentially with optical depth: $T = e^{-\int \sigma\,ds}$ (Beer-Lambert). Fog blends each pixel toward the airlight according to its depth.
+- The emission-absorption volume rendering integral is $C = \int T\,\sigma\,c\,dt$. The weight $w = T\sigma$ says where along the ray the color comes from.
+- Discretized, it becomes front-to-back alpha compositing: $\alpha_i = 1 - e^{-\sigma_i\delta_i}$, $T_i = \prod_{j<i}(1-\alpha_j)$, $\hat C = \sum_i T_i\alpha_i c_i$. It is differentiable and permits early ray termination.
+- Uniform samples alias. Stratified sampling removes the bias on average, and hierarchical sampling concentrates samples where the weights are large.
+- A surface is the limit of a volume with very high density, and expected depth $\sum_i w_i t_i$ turns a volume into a depth map.
+- Volumes are stored as voxel grids (or sparse grids, or networks) and rendered by ray marching. Surfaces stored as signed distance fields can be rendered efficiently by sphere tracing.
+
+```{=html}
+<script src="../demos/volumetric.js"></script>
+```

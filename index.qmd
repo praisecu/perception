@@ -41,6 +41,14 @@ This book is written for students meeting computer vision and robot perception f
 [[Chapter 9]{.book-card__label}[Learning Depth]{.book-card__title}[Coded apertures and neural networks that estimate depth.]{.book-card__text}](chapters/learned-depth.qmd){.book-card}
 
 [[Chapter 10]{.book-card__label}[Stereo and Two-View Geometry]{.book-card__title}[Epipolar geometry, disparity and depth from two cameras.]{.book-card__text}](chapters/stereo.qmd){.book-card}
+
+[[Chapter 11]{.book-card__label}[Structure from Motion]{.book-card__title}[Feature tracks, the essential matrix, PnP and bundle adjustment.]{.book-card__text}](chapters/sfm.qmd){.book-card}
+
+[[Chapter 12]{.book-card__label}[Volumetric Rendering]{.book-card__title}[Transmittance, alpha compositing and ray marching through density.]{.book-card__text}](chapters/volumetric.qmd){.book-card}
+
+[[Chapter 13]{.book-card__label}[Neural Radiance Fields]{.book-card__title}[Positional encoding, hierarchical sampling and hash grids.]{.book-card__text}](chapters/nerf.qmd){.book-card}
+
+[[Chapter 14]{.book-card__label}[3D Gaussian Splatting]{.book-card__title}[Covariance, EWA projection, sorting and adaptive density control.]{.book-card__text}](chapters/gaussian-splatting.qmd){.book-card}
 :::
 
 ::: {.callout-note}
