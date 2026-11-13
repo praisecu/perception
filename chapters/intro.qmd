@@ -104,9 +104,13 @@ There is an object in the picture below. Can you find it? Then press **Play moti
   // The mask matches the first frame only, so revealing works on the still image.
   fig.addEventListener("click", (event) => {
     const action = event.target.closest("[data-camo]")?.dataset.camo;
-    if (action === "play") { mask.hidden = true; reveal.disabled = true; still.hidden = true; video.hidden = false; video.play(); }
-    if (action === "reveal" && !still.hidden) { mask.hidden = !mask.hidden; }
-    if (action === "reset") { video.pause(); video.currentTime = 0; video.hidden = true; still.hidden = false; mask.hidden = true; reveal.disabled = false; }
+    const toStill = () => { video.pause(); video.currentTime = 0; video.hidden = true; still.hidden = false; };
+    if (action === "play") { mask.hidden = true; still.hidden = true; video.hidden = false; video.play(); }
+    if (action === "reveal") {
+      if (still.hidden) { toStill(); mask.hidden = false; }  // jump back to frame 1, where the mask lines up
+      else { mask.hidden = !mask.hidden; }
+    }
+    if (action === "reset") { toStill(); mask.hidden = true; }
   });
 })();
 </script>
