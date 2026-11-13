@@ -4,3 +4,5 @@
 
 **/*.quarto_ipynb
 /_site/
+tools/shorts/tts/
+tools/shorts/out/

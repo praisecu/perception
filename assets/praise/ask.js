@@ -280,7 +280,7 @@
         ${more.length ? `<div class="ask-label ask-label--list">More places to look</div>
         <ul class="ask-results">${more.map((d, i) => `
           <li>
-            <a href="${url(d.href)}"><span class="ask-chap">${esc(d.chapter)}</span><span class="ask-sec">${esc(d.section)}</span></a>
+            <a href="${url(d.href)}">${d.section === d.chapter ? `<span class="ask-chap">Chapter overview</span>` : `<span class="ask-chap">${esc(d.chapter)}</span>`}<span class="ask-sec">${esc(d.section)}</span></a>
             <button type="button" class="ask-mini" data-sum="${i}">Summarize</button>
             <div class="ask-minisum" hidden></div>
           </li>`).join("")}</ul>` : ""}`;

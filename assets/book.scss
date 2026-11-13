@@ -150,8 +150,9 @@ h1.title, .quarto-title h1.title {
 @media (min-width: 992px) {
   #title-block-header { margin-top: 0.6rem; }
 }
+/* No breadcrumb bar above chapter titles on desktop. */
 .quarto-title-breadcrumbs {
-  margin-bottom: 1.4rem;
+  display: none !important;
 }
 
 h2 {
