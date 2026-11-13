@@ -15,11 +15,11 @@ from short_style import HERE
 SCENE = ASSETS / "scene.jpg"
 SCENE_R = ASSETS / "scene_r.png"
 
-# Beat and line start times from the recorded narration (prep_voice.py).
+# Start time and length of every script line in the narration (line_voice.py).
 import json
-VOICE = json.loads((HERE / "out" / "ch01" / "1.1-how-does-a-robot-see" / "voice.json").read_text())
-B = VOICE["beats"]
-S = {int(k): v for k, v in VOICE["segments"].items()}
+VOICE = json.loads((HERE / "out" / "ch01" / "1.1-how-does-a-robot-see" / "voice_lines.json").read_text())
+L = {int(k): v for k, v in VOICE["start"].items()}
+D = {int(k): v for k, v in VOICE["dur"].items()}
 END = VOICE["duration"]
 IMG_W_PX, IMG_H_PX = 1280, 720
 
@@ -41,6 +41,8 @@ class Seeing(Scene):
         dt = t - self.renderer.time
         if dt > 1 / 30:
             self.wait(dt)
+        elif dt < -0.3:
+            print(f"[sync] {-dt:.2f} s late for t={t:.2f}")
 
     def construct(self):
         # ---------- Cover: 0 to 3 s ----------
@@ -59,7 +61,7 @@ class Seeing(Scene):
         self.add_foreground_mobject(head_bar)
         self.play(FadeIn(k, shift=UP * 0.2), FadeIn(t1, shift=UP * 0.3), FadeIn(t2, shift=UP * 0.3), run_time=0.7)
         self.play(FadeIn(sub, shift=UP * 0.2), FadeIn(thumb_card), FadeIn(thumb, scale=0.96), run_time=0.7)
-        self.until(B[1] - 0.5)
+        self.until(L[2] - 0.5)
         self.play(FadeOut(Group(k, t1, t2, sub, thumb_card, thumb), shift=UP * 0.3), run_time=0.5)
 
         # ---------- Beat 1: a camera looks at a room (3 to 8 s) ----------
@@ -76,7 +78,7 @@ class Seeing(Scene):
         self.play(FadeIn(img, scale=0.92), Create(frame), run_time=0.7)
         cap1 = say("We see three drones.", 52).next_to(frame, DOWN, buff=0.6)
         self.play(Write(cap1), run_time=0.8)
-        self.until(B[2])
+        self.until(L[3])
 
         # ---------- Beat 2: the robot sees numbers (8 to 14 s) ----------
         x0, y0, n, cell = 832, 352, 6, 9
@@ -87,6 +89,7 @@ class Seeing(Scene):
         self.play(FadeOut(cap1, shift=UP * 0.2), run_time=0.35)
         self.play(FadeIn(img_g), FadeIn(g_p, shift=UP * 0.15), run_time=0.9)
         self.wait(1.0)
+        self.until(L[4])
         self.play(Create(patch), Write(cap2), run_time=0.7)
         self.wait(0.5)
 
@@ -115,9 +118,9 @@ class Seeing(Scene):
         )
         cap2.move_to(cap2_to)
         self.play(FadeIn(p, scale=0.8), FadeIn(cap2, shift=DOWN * 0.15), run_time=0.5)
-        self.until(S[4] + 0.3)
+        self.until(L[4] + 0.4 * D[4])
         self.play(LaggedStart(*[Indicate(c[1], color=GOLD, scale_factor=1.25) for c in cells[::5]], lag_ratio=0.12), run_time=1.6)
-        self.until(S[4] + 3.4)
+        self.until(L[5])
         bar = RoundedRectangle(width=7.08, height=0.5, corner_radius=0.25).set_stroke(INK, 2)
         bar.set_fill(color=[BLACK, WHITE], opacity=1)
         bar.set_sheen_direction(RIGHT)
@@ -126,9 +129,9 @@ class Seeing(Scene):
         b1 = mono("255 · white", 28, INK).next_to(bar, DOWN, buff=0.2).align_to(bar, RIGHT)
         blab = body("Each pixel is one brightness value", 34).next_to(b0, DOWN, buff=0.35).set_x(0)
         self.play(FadeIn(bar), FadeIn(b0), FadeIn(blab, shift=UP * 0.2), run_time=0.6)
-        self.until(S[4] + 5.5)
+        self.until(L[5] + 0.55 * D[5])
         self.play(FadeIn(b1, shift=UP * 0.1), run_time=0.4)
-        self.until(B[3] - 0.6)
+        self.until(L[6] - 0.4)
 
         # ---------- Colour: tilt the gray grid, split into R, G, B, fold back ----------
         flat_gray = cells.copy()  # clean number grid, reused for the "drone" beat
@@ -177,8 +180,10 @@ class Seeing(Scene):
         link = DashedLine(hls[0].get_center(), hls[2].get_center(), dash_length=0.12).set_stroke(GOLD, 3)
         rv, gv, bv = (layers[ch][i_px][1].text for ch in ("R", "G", "B"))
         px_t = mono(f"one pixel = ({rv}, {gv}, {bv})", 36, GOLD).next_to(layers["B"], DOWN, buff=0.45)
+        self.until(L[7])
         self.play(Create(hls), Create(link), FadeIn(px_t, shift=UP * 0.15), run_time=0.7)
         self.wait(1.2)
+        self.until(L[8] - 0.3)
 
         # Fold back into one flat colour image.
         flat_col = VGroup()
@@ -194,6 +199,7 @@ class Seeing(Scene):
         self.wait(0.4)
 
         # ---------- Beat 3: how many numbers ----------
+        self.until(L[9] - 0.6)
         cells = layers["R"]
         self.play(FadeOut(VGroup(c_cap, c_sub)), cells.animate.scale(0.42).move_to(UP * 4.6), run_time=0.6)
         l1 = mono("1920 × 1080 pixels × 3 colors", 34, INK)
@@ -203,7 +209,7 @@ class Seeing(Scene):
         n1 = fast_counter(v1, 100, GOLD, grp1[1].get_center())
         self.play(FadeIn(l1, shift=UP * 0.2), FadeIn(n1), run_time=0.4)
         self.play(v1.animate.set_value(6220800), Write(n1_lab), run_time=1.6, rate_func=rate_functions.ease_out_cubic)
-        self.until(S[6])
+        self.until(L[9] + 0.42 * D[9])
         l2 = mono("× 30 frames every second", 34, INK)
         v2 = ValueTracker(0)
         n2_lab = say("numbers every second", 48)
@@ -213,7 +219,7 @@ class Seeing(Scene):
         self.play(v2.animate.set_value(186624000), Write(n2_lab), run_time=3.0, rate_func=rate_functions.ease_out_cubic)
         ul = underline(n2_lab, GOLD, 6)
         self.play(Create(ul), run_time=0.4)
-        self.until(B[4] - 0.4)
+        self.until(L[10] - 0.4)
 
         # ---------- Not one says "drone" ----------
         n1.clear_updaters(); n2.clear_updaters()
@@ -224,7 +230,7 @@ class Seeing(Scene):
         self.play(FadeIn(nd1, shift=UP * 0.2), run_time=0.5)
         self.play(FadeIn(nd2, scale=0.9), run_time=0.6)
         self.wait(2.5)
-        self.until(B[5] - 0.6)
+        self.until(L[11] - 0.6)
 
         # ---------- Beat 4: meaning hides in the numbers (21 to 30 s) ----------
         self.play(FadeOut(VGroup(nd1, nd2, flat_gray)), img.animate.set_opacity(1), frame.animate.set_stroke(opacity=1), run_time=0.6)
@@ -233,11 +239,11 @@ class Seeing(Scene):
         q = VGroup(q1, q2).arrange(DOWN, buff=0.3)
         fit(q, 8.2).next_to(frame, UP, buff=0.5)
         self.play(Write(q), run_time=0.9)
-        self.until(S[9])
+        self.until(L[12])
         edges = ImageMobject(str(ASSETS / "edges_r.png")).set_width(img.width).move_to(img)
         e_p = pill("edges", size=40).next_to(frame, DOWN, buff=0.45)
         self.play(img.animate.set_opacity(0.35), FadeIn(edges), FadeIn(e_p, shift=UP * 0.2), run_time=0.8)
-        self.until(S[10])
+        self.until(L[12] + 0.38 * D[12])
         boxes = [
             (self.box_on(img, 10, 455, 690, 705, INK), "near"),
             (self.box_on(img, 735, 330, 1065, 445, INK), "middle"),
@@ -254,11 +260,11 @@ class Seeing(Scene):
                 t.next_to(bx, UP, buff=0.08).align_to(bx, LEFT)
             tags.add(t)
         self.play(LaggedStart(*[Create(b) for b, _ in boxes], lag_ratio=0.25), run_time=1.1)
-        self.until(S[11])
+        self.until(L[12] + 0.68 * D[12])
         d_p = pill("how far", size=40).move_to(o_p)
         self.play(ReplacementTransform(o_p, d_p), LaggedStart(*[FadeIn(t, shift=UP * 0.15) for t in tags], lag_ratio=0.25), run_time=1.0)
         o_p = d_p
-        self.until(B[6] - 0.5)
+        self.until(L[13] - 0.5)
 
         # ---------- Beat 5: that is perception (30 to 37 s) ----------
         stuff = Group(img, frame, edges, *[b for b, _ in boxes], tags, q, o_p)
@@ -285,7 +291,7 @@ class Seeing(Scene):
         self.play(Write(word), Create(brace), run_time=1.0)
         self.play(Create(wl), FadeIn(sub, shift=UP * 0.2), run_time=0.6)
         self.wait(2.5)
-        self.until(B[7] - 0.5)
+        self.until(L[14] - 0.5)
 
         # ---------- Beat 6: no perception, no action (37 to 43 s) ----------
         self.play(FadeOut(VGroup(nodes, arrows, brace, word, wl, sub)), run_time=0.5)
@@ -311,7 +317,7 @@ class Seeing(Scene):
                     rough_arrow(steps2[1].get_right() + RIGHT * 0.12, steps2[2].get_left() + LEFT * 0.12))
         self.play(LaggedStart(Write(steps2[0]), Create(ar[0]), Write(steps2[1]), Create(ar[1]), Write(steps2[2]), lag_ratio=0.3), run_time=1.3)
         self.wait(1.0)
-        self.until(B[8] - 0.5)
+        self.until(L[15] - 0.5)
 
         # ---------- End card (39 to 42 s) ----------
         self.play(FadeOut(Group(h1, h2, wall_l, wall_r, drone, steps2, ar)), run_time=0.5)

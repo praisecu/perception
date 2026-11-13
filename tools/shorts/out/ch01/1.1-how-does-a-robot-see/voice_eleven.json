@@ -1,0 +1,62 @@
+[
+ {
+  "clip": "line_01.mp3",
+  "start": 0.15
+ },
+ {
+  "clip": "line_02.mp3",
+  "start": 6.15
+ },
+ {
+  "clip": "line_03.mp3",
+  "start": 12.15
+ },
+ {
+  "clip": "line_04.mp3",
+  "start": 14.48
+ },
+ {
+  "clip": "line_05.mp3",
+  "start": 19.15
+ },
+ {
+  "clip": "line_06.mp3",
+  "start": 23.32
+ },
+ {
+  "clip": "line_07.mp3",
+  "start": 28.85
+ },
+ {
+  "clip": "line_08.mp3",
+  "start": 31.9
+ },
+ {
+  "clip": "line_09.mp3",
+  "start": 34.95
+ },
+ {
+  "clip": "line_10.mp3",
+  "start": 44.88
+ },
+ {
+  "clip": "line_11.mp3",
+  "start": 47.61
+ },
+ {
+  "clip": "line_12.mp3",
+  "start": 51.14
+ },
+ {
+  "clip": "line_13.mp3",
+  "start": 58.67
+ },
+ {
+  "clip": "line_14.mp3",
+  "start": 64.52
+ },
+ {
+  "clip": "line_15.mp3",
+  "start": 71.33
+ }
+]
