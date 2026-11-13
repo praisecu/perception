@@ -81,12 +81,13 @@ class Seeing(Scene):
         # ---------- Beat 2: the robot sees numbers (8 to 14 s) ----------
         x0, y0, n, cell = 832, 352, 6, 9
         patch = self.box_on(img, x0, y0, x0 + n * cell, y0 + n * cell, GOLD, 5)
-        cap2 = say("The robot sees...", 52).move_to(cap1)
         img_g = ImageMobject(str(ASSETS / "scene_gray_r.png")).set_width(img.width).move_to(img)
-        g_p = pill("grayscale", size=34).move_to(cap1)
-        self.play(FadeIn(img_g), FadeIn(g_p, shift=UP * 0.15), FadeOut(cap1, shift=UP * 0.2), run_time=0.6)
-        self.play(Create(patch), run_time=0.5)
-        self.play(FadeOut(g_p, run_time=0.25), Write(cap2), run_time=0.6)
+        g_p = pill("grayscale", size=34).next_to(frame, DOWN, buff=0.45)
+        cap2 = say("The robot sees...", 52).next_to(g_p, DOWN, buff=0.4)
+        self.play(FadeIn(img_g, run_time=0.9), FadeIn(g_p, shift=UP * 0.15), FadeOut(cap1, shift=UP * 0.2), run_time=0.9)
+        self.wait(1.0)
+        self.play(Create(patch), Write(cap2), run_time=0.7)
+        self.wait(0.5)
 
         g = np.asarray(Image.open(SCENE).convert("L"), dtype=float)
         vals = [[int(g[y0 + r * cell:y0 + (r + 1) * cell, x0 + c * cell:x0 + (c + 1) * cell].mean())
@@ -103,7 +104,7 @@ class Seeing(Scene):
             sq_num[1].move_to(sq_num[0])
         seed = patch.copy()
         self.play(
-            img.animate.set_opacity(0.0), FadeOut(img_g), frame.animate.set_stroke(opacity=0.0),
+            img.animate.set_opacity(0.0), FadeOut(img_g), FadeOut(g_p), frame.animate.set_stroke(opacity=0.0),
             FadeOut(cone), FadeOut(cam), FadeOut(lab1),
             ReplacementTransform(seed, cells), FadeOut(patch),
             run_time=1.0,
@@ -212,12 +213,13 @@ class Seeing(Scene):
 
         # ---------- Not one says "drone" ----------
         n1.clear_updaters(); n2.clear_updaters()
-        self.play(FadeOut(VGroup(l1, n1, n1_lab, l2, n2, n2_lab, ul)), FadeOut(cells), FadeIn(flat_gray.move_to(DOWN * 0.6).set_opacity(0.25)), run_time=0.4)
-        nd1 = say("And not one of them", 56).move_to(UP * 4.6)
+        self.play(FadeOut(VGroup(l1, n1, n1_lab, l2, n2, n2_lab, ul)), FadeOut(cells), FadeIn(flat_gray.move_to(DOWN * 1.1).set_opacity(0.25)), run_time=0.4)
+        nd1 = say("And not one of them", 56).move_to(UP * 5.3)
         nd2 = title("says “drone”.", 110, GOLD).next_to(nd1, DOWN, buff=0.35)
         fit(nd2, 7.4)
         self.play(FadeIn(nd1, shift=UP * 0.2), run_time=0.5)
         self.play(FadeIn(nd2, scale=0.9), run_time=0.6)
+        self.wait(2.5)
         self.until(B[5] - 0.6)
 
         # ---------- Beat 4: meaning hides in the numbers (21 to 30 s) ----------
@@ -276,6 +278,7 @@ class Seeing(Scene):
         brace = BraceBetweenPoints(nodes.get_corner(UR) + RIGHT * 0.3, nodes.get_corner(DR) + RIGHT * 0.3, RIGHT).set_color(GOLD)
         self.play(Write(word), Create(brace), run_time=1.0)
         self.play(Create(wl), FadeIn(sub, shift=UP * 0.2), run_time=0.6)
+        self.wait(2.5)
         self.until(B[7] - 0.5)
 
         # ---------- Beat 6: no perception, no action (37 to 43 s) ----------
