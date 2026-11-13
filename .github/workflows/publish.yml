@@ -32,6 +32,7 @@ jobs:
           test -n "$PREVIEW_PATH"
           mkdir -p _site
           cp -r landing/. _site/
+          sed -i "s|__PREVIEW_PATH__|$PREVIEW_PATH|g" _site/index.html
           cp CNAME _site/
           cp -r _book "_site/$PREVIEW_PATH"
       - uses: actions/upload-pages-artifact@v3
