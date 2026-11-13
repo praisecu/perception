@@ -1,7 +1,7 @@
 """Voice a short with ElevenLabs, one clip per script line, placed at the script's times.
 
     setx ELEVENLABS_API_KEY <your key>      (once, then open a new terminal)
-    python eleven_voice.py ch01/1.1-how-does-a-robot-see
+    python eleven_voice.py ch01/1.1-how-does-a-robot-see [voice_id]
 
 Reads out/<short>/script.md (the table's Time and Voiceover columns), writes
 out/<short>/eleven/line_NN.mp3, out/<short>/voice_eleven.wav and
@@ -18,7 +18,7 @@ from pathlib import Path
 import requests
 
 HERE = Path(__file__).parent
-VOICE_ID = "NOpBlnGInO9m6vDvFkFC"
+VOICE_ID = "NOpBlnGInO9m6vDvFkFC"  # library voice: needs a paid plan; pass another id as the 2nd argument
 MODEL = "eleven_v4"
 SR = 48000
 
@@ -49,7 +49,9 @@ def duration(path):
                                           "-of", "csv=p=0", str(path)]).decode())
 
 
-def main(short):
+def main(short, voice=None):
+    global VOICE_ID
+    VOICE_ID = voice or VOICE_ID
     key = os.environ.get("ELEVENLABS_API_KEY")
     if not key:
         sys.exit("Set ELEVENLABS_API_KEY first.")
@@ -89,4 +91,4 @@ def main(short):
 
 
 if __name__ == "__main__":
-    main(sys.argv[1])
+    main(*sys.argv[1:3])
