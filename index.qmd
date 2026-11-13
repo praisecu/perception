@@ -1,7 +1,7 @@
 # Welcome {.unnumbered}
 
 ::: {.book-hero}
-[Open online book]{.book-hero__kicker}
+[Open online book · Under development]{.book-hero__kicker}
 
 [How robots, from tiny drones to autonomous vehicles, turn light and other signals into an understanding of the world around them.]{.book-hero__lead}
 
@@ -9,6 +9,11 @@
 [Start reading](chapters/intro.qmd){.btn .btn-primary}
 [PRAISe Lab](https://www.praisecu.com){.btn .btn-gold-outline}
 :::
+:::
+
+::: {.callout-warning appearance="simple"}
+## Under development
+This book is a work in progress. Chapters are being written and revised, so expect changes, rough edges and missing sections. Feedback is welcome through **Report an issue**.
 :::
 
 This book is written for students meeting computer vision and robot perception for the first time. It is built to be used, not just read.
