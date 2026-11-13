@@ -2,7 +2,7 @@ import bpy, glob, os, sys, math
 from mathutils import Vector
 argv = sys.argv[sys.argv.index('--')+1:] if '--' in sys.argv else []
 MODE = argv[0] if argv else 'test'
-OUT = r'C:\praise-website-dev\perception\chapters\media\features'
+OUT = os.path.join(os.path.dirname(os.path.abspath(__file__)), '..', '..', 'chapters', 'media', r'features')
 os.makedirs(OUT, exist_ok=True)
 base = os.path.expanduser('~/blenderkit_data')
 bpy.ops.wm.read_factory_settings(use_empty=True)
