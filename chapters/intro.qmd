@@ -100,11 +100,13 @@ There is an object in the picture below. Can you find it? Then press **Play moti
   const still = fig.querySelector(".camo__still");
   const video = fig.querySelector(".camo__video");
   const mask = fig.querySelector(".camo__mask");
+  const reveal = fig.querySelector('[data-camo="reveal"]');
+  // The mask matches the first frame only, so revealing works on the still image.
   fig.addEventListener("click", (event) => {
     const action = event.target.closest("[data-camo]")?.dataset.camo;
-    if (action === "play") { still.hidden = true; video.hidden = false; video.play(); }
-    if (action === "reveal") { mask.hidden = !mask.hidden; }
-    if (action === "reset") { video.pause(); video.currentTime = 0; video.hidden = true; still.hidden = false; mask.hidden = true; }
+    if (action === "play") { mask.hidden = true; reveal.disabled = true; still.hidden = true; video.hidden = false; video.play(); }
+    if (action === "reveal" && !still.hidden) { mask.hidden = !mask.hidden; }
+    if (action === "reset") { video.pause(); video.currentTime = 0; video.hidden = true; still.hidden = false; mask.hidden = true; reveal.disabled = false; }
   });
 })();
 </script>
