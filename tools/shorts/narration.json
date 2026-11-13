@@ -1,0 +1,16 @@
+{
+  "voice": "af_heart",
+  "speed": 1.0,
+  "ch01_seeing": {
+    "lines": [
+      {"at": 0.3, "text": "How does a robot see? It's probably not what you think."},
+      {"at": 3.4, "text": "Put a camera on a robot, and point it at this room. We see three drones."},
+      {"at": 7.6, "text": "But the robot doesn't see drones. It sees this. Just numbers."},
+      {"at": 12.5, "text": "One HD frame is over six million numbers. At thirty frames a second, that's almost two hundred million, every second."},
+      {"at": 19.0, "text": "Somewhere in there are edges, objects, and how far away they are."},
+      {"at": 25.4, "text": "Turning those numbers into meaning? That's perception."},
+      {"at": 31.0, "text": "And a robot that can't perceive... can't act."},
+      {"at": 38.0, "text": "Fundamentals of Robot Perception. Chapter one."}
+    ]
+  }
+}

@@ -1,0 +1,48 @@
+{
+ "duration": 70.18,
+ "beats": [
+  0.0,
+  5.63,
+  11.54,
+  21.35,
+  33.7,
+  37.25,
+  50.72,
+  56.17,
+  64.52
+ ],
+ "segments": {
+  "0": 0.1,
+  "1": 2.52,
+  "2": 5.73,
+  "3": 11.64,
+  "4": 13.54,
+  "5": 21.45,
+  "6": 26.43,
+  "7": 33.8,
+  "8": 37.35,
+  "9": 40.59,
+  "10": 43.31,
+  "11": 45.95,
+  "12": 50.82,
+  "13": 56.27,
+  "14": 64.62
+ },
+ "text": {
+  "0": "You see three drones.",
+  "1": "A robot sees nothing like that.",
+  "2": "Point a camera at this room and what the robot actually receives is a grade of numbers.",
+  "3": "Zoom in on one drone.",
+  "4": "Every pixel in the screen is just a brightness from 0 for black and 255 for white.",
+  "5": "One Full HD frame holds over 6 million of these.",
+  "6": "At 30 frames a second, that's nearly 200 million numbers every single second.",
+  "7": "And not one of them says drone.",
+  "8": "So the robot has to find the meaning itself.",
+  "9": "Edges where the brightness jumps.",
+  "10": "Shapes that adds up to an object.",
+  "11": "And clues to how far away each one is.",
+  "12": "That leap from raw numbers to understanding the world is what we call a perception.",
+  "13": "Without it, a robot can't find the gap, dodge any obstacle, land, or anything like that.",
+  "14": "To learn more, read Fundamentals of Robot Perception by Braids Lab."
+ }
+}

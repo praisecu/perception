@@ -5,4 +5,6 @@
 **/*.quarto_ipynb
 /_site/
 tools/shorts/tts/
-tools/shorts/out/
+tools/shorts/out/**/*.mp4
+tools/shorts/out/**/*.wav
+tools/shorts/out/**/*.m4a
