@@ -20,7 +20,8 @@ HERE = Path(__file__).parent
 SR = 48000
 GAP = 0.35
 # Extra breathing room before these lines (section changes or holds).
-GAP_BEFORE = {3: 0.7, 6: 0.8, 9: 0.8, 10: 0.8, 11: 2.0, 13: 0.9, 14: 2.0, 15: 1.5}
+# Per-short settings live in out/<short>/gaps.json, e.g. {"3": 0.7, "11": 2.0}.
+GAP_BEFORE = {}
 
 
 def load(path):
@@ -41,6 +42,9 @@ def trim(y, thr_db=-42, pad=0.04):
 
 def main(short, clip_dir=None):
     d = HERE / "out" / short
+    gp = d / "gaps.json"
+    if gp.exists():
+        GAP_BEFORE.update({int(k): v for k, v in json.loads(gp.read_text()).items()})
     src = Path(clip_dir) if clip_dir else d / "eleven"
     clips = sorted(src.glob("line_*.mp3")) + sorted(src.glob("line_*.wav"))
     out, t = [], 0.4
