@@ -121,38 +121,83 @@ class Descent(Scene):
         self.play(curve.animate.set_stroke(opacity=1), FadeIn(goal), run_time=0.6)
         self.until(L[6] - 0.4)
 
-        # ---------- Seen from above ----------
+        # ---------- Seen from above: tilt a 3D bowl from side view to top view ----------
         b.clear_updaters(); tg.clear_updaters()
-        self.play(FadeOut(VGroup(ax, xl, yl, curve, seen, b, tg, sl, trail, goal, cap5)), run_time=0.5)
-        cap6 = say("Seen from above", 54).move_to(UP * 5.4)
-        c0 = DOWN * 0.6
-        A, Bq, S = 1.0, 5.0, 1.2
-        rings = VGroup()
-        for lev in (0.15, 0.6, 1.4, 2.6, 4.2, 6.2):
-            rings.add(Ellipse(width=2 * np.sqrt(2 * lev / A) * S, height=2 * np.sqrt(2 * lev / Bq) * S)
-                      .move_to(c0).set_stroke(INK, 3, 0.35 + 0.1 * (lev < 1)))
-        low = Dot(c0, radius=0.09, color=GOLD)
-        self.play(Write(cap6), LaggedStart(*[Create(r) for r in rings[::-1]], lag_ratio=0.12), FadeIn(low), run_time=1.3)
+        A, Bq, S, KZ = 1.0, 5.0, 1.04, 0.55
+        c0 = DOWN * 0.4
+        th = ValueTracker(0.0)          # 0 = side view, 1 = straight down
+
+        def Lf(u, v):
+            return 0.5 * (A * u * u + Bq * v * v)
+
+        def proj(u, v, z):
+            a = th.get_value() * PI / 2
+            return c0 + np.array([u * S, (z * KZ - 1.9) * np.cos(a) + v * S * np.sin(a), 0])
+
+        U, V = 3.6, 1.5
+        def wire():
+            g = VGroup()
+            op = 0.55 * (1 - th.get_value()) ** 1.5
+            for vv in np.linspace(-1.2, 1.2, 7):
+                g.add(ParametricFunction(lambda t: proj(t, vv, Lf(t, vv)), t_range=[-U, U])
+                      .set_stroke(INK, 5 if abs(vv) < 1e-6 else 2, 1.0 if abs(vv) < 1e-6 else op))
+            for uu in np.linspace(-3.0, 3.0, 7):
+                g.add(ParametricFunction(lambda t: proj(uu, t, Lf(uu, t)), t_range=[-1.2, 1.2])
+                      .set_stroke(INK, 2, op))
+            g[3].set_stroke(opacity=max(op, 1 - th.get_value()))
+            return g
+
+        def rings_now():
+            g = VGroup()
+            op = th.get_value() ** 2
+            for lev in (0.15, 0.6, 1.4, 2.6, 4.2, 6.2, 8.4):
+                g.add(ParametricFunction(lambda t: proj(np.sqrt(2 * lev / A) * np.cos(t), np.sqrt(2 * lev / Bq) * np.sin(t), lev),
+                                         t_range=[0, 2 * PI]).set_stroke(INK, 3, 0.45 * op))
+            return g
+
         u, v = -3.3, 0.95
-        pts = [np.array([u, v])]
-        for _ in range(8):
+        pts = [(u, v)]
+        for _ in range(12):
             u, v = u - 0.3 * A * u, v - 0.3 * Bq * v
-            pts.append(np.array([u, v]))
-        pos = [c0 + np.array([p[0], p[1], 0]) * S for p in pts]
-        dot0 = Dot(pos[0], radius=0.16, color=GOLD).set_stroke(INK, 2)
-        self.play(FadeIn(dot0, scale=0.5), run_time=0.3)
-        steps = VGroup()
-        for a_, b_ in zip(pos[:-1], pos[1:]):
-            ar = Arrow(a_, b_, buff=0.05, color=GOLD, stroke_width=5, max_tip_length_to_length_ratio=0.25)
-            steps.add(ar)
-            self.play(GrowArrow(ar), dot0.animate.move_to(b_), run_time=0.35)
+            pts.append((u, v))
+        k_now = ValueTracker(0)
+
+        def ball3():
+            k = int(k_now.get_value())
+            uu, vv = pts[k]
+            return Dot(proj(uu, vv, Lf(uu, vv)) + UP * 0.16 * np.cos(th.get_value() * PI / 2), radius=0.17,
+                       color=GOLD).set_stroke(INK, 2)
+
+        def path_now():
+            k = int(k_now.get_value())
+            g = VGroup()
+            for (u1, v1), (u2, v2) in zip(pts[:k], pts[1:k + 1]):
+                g.add(Arrow(proj(u1, v1, Lf(u1, v1)), proj(u2, v2, Lf(u2, v2)), buff=0.04, color=GOLD,
+                            stroke_width=5, max_tip_length_to_length_ratio=0.25))
+            return g
+
+        wf = always_redraw(wire)
+        rg = always_redraw(rings_now)
+        pth = always_redraw(path_now)
+        bl3 = always_redraw(ball3)
+        cap6 = say("Now with two weights", 54).move_to(cap5)
+        self.play(FadeOut(VGroup(ax, xl, yl, seen, b, tg, sl, trail, goal)),
+                  ReplacementTransform(curve, wf[3]), ReplacementTransform(cap5, cap6), run_time=0.7)
+        self.remove(wf[3]); self.add(wf, rg, pth, bl3)
+        self.wait(0.3)
+        cap6b = say("Seen from above", 54).move_to(cap6)
+        self.play(th.animate.set_value(1.0), ReplacementTransform(cap6, cap6b), run_time=1.8, rate_func=smooth)
+        self.play(k_now.animate.set_value(len(pts) - 1), run_time=2.6, rate_func=linear)
         note = body("each step crosses the lines at a right angle", 34, INK)
-        fit(note, 8.4).move_to(DOWN * 4.2)
+        fit(note, 8.4).move_to(DOWN * 4.0)
         self.play(FadeIn(note, shift=UP * 0.2), run_time=0.5)
         self.until(L[7] - 0.4)
+        for m in (wf, rg, pth, bl3):
+            m.clear_updaters()
+        rings, low, steps, dot0 = rg, wf, pth, bl3
 
         # ---------- The rule ----------
-        self.play(FadeOut(VGroup(rings, low, steps, dot0, note, cap6)), run_time=0.5)
+        self.play(FadeOut(VGroup(rings, low, steps, dot0, note, cap6b)), run_time=0.5)
         cap7 = say("The whole rule", 54).move_to(UP * 5.0)
         r1 = VGroup(title("new w", 84, GOLD), title("=", 84, INK), title("w", 84, INK), title("−", 84, INK))
         r1.arrange(RIGHT, buff=0.35)
@@ -204,18 +249,43 @@ class Descent(Scene):
         cap9 = say("Every weight, nudged together", 50).move_to(UP * 5.4)
         fit(cap9, 8.4)
         rng = np.random.default_rng(3)
-        sliders = VGroup()
-        knobs = []
-        for r in range(6):
-            for c in range(4):
-                tr = Line(LEFT * 0.8, RIGHT * 0.8).set_stroke(MUTED, 4)
-                kn = Circle(radius=0.13).set_fill(GOLD, 1).set_stroke(INK, 2).move_to(tr.point_from_proportion(rng.uniform(0.2, 0.8)))
-                sliders.add(VGroup(tr, kn)); knobs.append(kn)
-        sliders.arrange_in_grid(6, 4, buff=(0.5, 0.55)).move_to(UP * 0.6)
-        self.play(Write(cap9), LaggedStart(*[FadeIn(s) for s in sliders], lag_ratio=0.02), run_time=1.0)
-        for _ in range(3):
-            self.play(*[kn.animate.shift(RIGHT * rng.uniform(-0.25, 0.25)) for kn in knobs], run_time=0.5)
-        fin = hand("That's learning.", 76, GOLD).move_to(DOWN * 4.0)
+        layers = [4, 6, 6, 3]
+        xs = np.linspace(-3.4, 3.4, len(layers))
+        pos = [[np.array([xs[i], y, 0]) for y in np.linspace(2.4, -2.4, n)] for i, n in enumerate(layers)]
+        W = [rng.normal(0, 1, (layers[i], layers[i + 1])) for i in range(len(layers) - 1)]
+
+        def edge_style(w):
+            a = min(1.0, abs(w) / 2.2)
+            return (GOLD if w > 0 else BLUE), 1.0 + 6.0 * a, 0.25 + 0.7 * a
+
+        edges, idx = VGroup(), []
+        for li in range(len(layers) - 1):
+            for a_ in range(layers[li]):
+                for b_ in range(layers[li + 1]):
+                    col, sw, op = edge_style(W[li][a_, b_])
+                    edges.add(Line(pos[li][a_], pos[li + 1][b_]).set_stroke(col, sw, op)); idx.append((li, a_, b_))
+        nodes = VGroup(*[Circle(radius=0.2).set_fill(BG, 1).set_stroke(INK, 3).move_to(q) for col in pos for q in col])
+        net_ = VGroup(edges, nodes).move_to(UP * 0.9)
+        key = VGroup(VGroup(Line(LEFT * 0.3, RIGHT * 0.3).set_stroke(GOLD, 6), mono("positive", 24, MUTED)).arrange(RIGHT, buff=0.15),
+                     VGroup(Line(LEFT * 0.3, RIGHT * 0.3).set_stroke(BLUE, 6), mono("negative", 24, MUTED)).arrange(RIGHT, buff=0.15),
+                     mono("thicker = bigger", 24, MUTED)).arrange(RIGHT, buff=0.5).next_to(net_, DOWN, buff=0.45)
+        loss_v = [2.31, 1.38, 0.74, 0.39]
+        loss = VGroup(mono("error", 34, MUTED), title(f"{loss_v[0]:.2f}", 80, GOLD)).arrange(RIGHT, buff=0.35).next_to(key, DOWN, buff=0.55)
+        step_t = mono("step 0", 30, MUTED).next_to(loss, DOWN, buff=0.25)
+        self.play(Write(cap9), FadeIn(nodes), Create(edges, lag_ratio=0.01), run_time=1.1)
+        self.play(FadeIn(key), FadeIn(loss), FadeIn(step_t), run_time=0.5)
+        for k in range(1, 4):
+            for li in range(len(W)):
+                W[li] = W[li] + rng.normal(0, 0.55, W[li].shape)
+            anims = []
+            for e, (li, a_, b_) in zip(edges, idx):
+                col, sw, op = edge_style(W[li][a_, b_])
+                anims.append(e.animate.set_stroke(col, sw, op))
+            new_loss = title(f"{loss_v[k]:.2f}", 80, GOLD).move_to(loss[1])
+            new_step = mono(f"step {k}", 30, MUTED).move_to(step_t)
+            self.play(*anims, Transform(loss[1], new_loss), Transform(step_t, new_step), run_time=0.7)
+        sliders = VGroup(net_, key, loss, step_t)
+        fin = hand("That's learning.", 76, GOLD).move_to(DOWN * 5.6)
         self.play(Write(fin), run_time=0.8)
         self.until(L[10] - 0.4)
 
