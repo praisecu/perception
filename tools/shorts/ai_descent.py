@@ -88,7 +88,7 @@ class Descent(Scene):
         x = ValueTracker(3.4)
         b = always_redraw(lambda: ball(x.get_value()))
         cap3 = say("Find the lowest valley", 54).move_to(cap)
-        self.play(ReplacementTransform(cap, cap3), FadeIn(goal, shift=UP * 0.2), FadeIn(b, scale=0.5), run_time=0.7)
+        self.play(FadeTransform(cap, cap3), FadeIn(goal, shift=UP * 0.2), FadeIn(b, scale=0.5), run_time=0.7)
         self.until(L[3] + 0.55 * D[3])
         x_now = 3.4
         seen = landscape(x_now - 0.7, min(3.6, x_now + 0.7), INK, 6)
@@ -107,7 +107,7 @@ class Descent(Scene):
 
         # ---------- Step, feel, repeat ----------
         cap5 = say("Step. Feel. Repeat.", 56).move_to(cap3)
-        self.play(FadeOut(VGroup(arr, dl)), ReplacementTransform(cap3, cap5), run_time=0.4)
+        self.play(FadeOut(VGroup(arr, dl)), FadeTransform(cap3, cap5), run_time=0.4)
         trail = VGroup()
         xv = 3.4
         for i in range(7):
@@ -126,6 +126,7 @@ class Descent(Scene):
         A, Bq, S, KZ = 1.0, 5.0, 1.04, 0.55
         c0 = DOWN * 0.4
         th = ValueTracker(0.0)          # 0 = side view, 1 = straight down
+        ring_in = ValueTracker(0.0)
 
         def Lf(u, v):
             return 0.5 * (A * u * u + Bq * v * v)
@@ -134,25 +135,20 @@ class Descent(Scene):
             a = th.get_value() * PI / 2
             return c0 + np.array([u * S, (z * KZ - 1.9) * np.cos(a) + v * S * np.sin(a), 0])
 
-        U, V = 3.6, 1.5
+        U, V = 4.1, 1.5
         def wire():
-            g = VGroup()
-            op = 0.55 * (1 - th.get_value()) ** 1.5
-            for vv in np.linspace(-1.2, 1.2, 7):
-                g.add(ParametricFunction(lambda t: proj(t, vv, Lf(t, vv)), t_range=[-U, U])
-                      .set_stroke(INK, 5 if abs(vv) < 1e-6 else 2, 1.0 if abs(vv) < 1e-6 else op))
-            for uu in np.linspace(-3.0, 3.0, 7):
-                g.add(ParametricFunction(lambda t: proj(uu, t, Lf(uu, t)), t_range=[-1.2, 1.2])
-                      .set_stroke(INK, 2, op))
-            g[3].set_stroke(opacity=max(op, 1 - th.get_value()))
+            # Only the bowl's profile (the 1D curve continued); it fades as the view turns overhead.
+            g = VGroup(*[VMobject() for _ in range(3)])
+            prof = ParametricFunction(lambda t: proj(t, 0, Lf(t, 0)), t_range=[-U, U])
+            g.add(prof.set_stroke(INK, 5, max(0.0, 1 - 1.4 * th.get_value())))
             return g
 
         def rings_now():
             g = VGroup()
-            op = th.get_value() ** 2
+            op = ring_in.get_value()
             for lev in (0.15, 0.6, 1.4, 2.6, 4.2, 6.2, 8.4):
                 g.add(ParametricFunction(lambda t: proj(np.sqrt(2 * lev / A) * np.cos(t), np.sqrt(2 * lev / Bq) * np.sin(t), lev),
-                                         t_range=[0, 2 * PI]).set_stroke(INK, 3, 0.45 * op))
+                                         t_range=[0, 2 * PI]).set_stroke(INK, 3, 0.42 * op))
             return g
 
         u, v = -3.3, 0.95
@@ -182,11 +178,11 @@ class Descent(Scene):
         bl3 = always_redraw(ball3)
         cap6 = say("Now with two weights", 54).move_to(cap5)
         self.play(FadeOut(VGroup(ax, xl, yl, seen, b, tg, sl, trail, goal)),
-                  ReplacementTransform(curve, wf[3]), ReplacementTransform(cap5, cap6), run_time=0.7)
+                  ReplacementTransform(curve, wf[3]), FadeTransform(cap5, cap6), run_time=0.7)
         self.remove(wf[3]); self.add(wf, rg, pth, bl3)
-        self.wait(0.3)
+        self.play(ring_in.animate.set_value(1.0), run_time=0.6)
         cap6b = say("Seen from above", 54).move_to(cap6)
-        self.play(th.animate.set_value(1.0), ReplacementTransform(cap6, cap6b), run_time=1.8, rate_func=smooth)
+        self.play(th.animate.set_value(1.0), FadeTransform(cap6, cap6b), run_time=1.8, rate_func=smooth)
         self.play(k_now.animate.set_value(len(pts) - 1), run_time=2.6, rate_func=linear)
         note = body("each step crosses the lines at a right angle", 34, INK)
         fit(note, 8.4).move_to(DOWN * 4.0)
